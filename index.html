@@ -1,0 +1,2010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Pintle Engine PoC</title>
+<meta name="description" content="Interactive proof-of-concept for a throttleable GOX and ethanol pintle engine: live fluid-system simulator, 3D exploded engine, design numbers and test plan.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a test-stand console. Live simulator first, then the hardware, then the reasoning, then the plan. Rules, not cards. */
+:root {
+  --paper: #f1f3f2;
+  --panel: #fbfcfb;
+  --ink: #17201c;
+  --muted: #56625d;
+  --rule: #d3dad6;
+  --gox: #2a62d6;
+  --fuel: #d06d17;
+  --n2: #85928c;
+  --prop: #7b4fc2;
+  --hot: #db4527;
+  --ok: #24935a;
+  --warn: #b98411;
+  --brass: #b0832c;
+  --dash: rgba(255,255,255,.85);
+  --display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --step--1: .8125rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.75rem;
+  --step-3: 2.6rem;
+  --step-4: clamp(2.6rem, 6vw, 4.4rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1211; --panel: #151b19; --ink: #e5ebe8; --muted: #98a59f; --rule: #29322f;
+    --gox: #5f8ff2; --fuel: #f08f3d; --n2: #7c8984; --prop: #a47ee8; --hot: #ff6b4d; --ok: #4cc283; --warn: #e2b23f; --brass: #d3a64f;
+    --dash: rgba(14,18,17,.8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1211; --panel: #151b19; --ink: #e5ebe8; --muted: #98a59f; --rule: #29322f;
+  --gox: #5f8ff2; --fuel: #f08f3d; --n2: #7c8984; --prop: #a47ee8; --hot: #ff6b4d; --ok: #4cc283; --warn: #e2b23f; --brass: #d3a64f;
+  --dash: rgba(14,18,17,.8);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: .01em; text-wrap: balance; margin: 0; line-height: 1.05; }
+h2 { font-size: var(--step-3); }
+h3 { font-size: var(--step-1); letter-spacing: .02em; }
+p { margin: 0; max-width: 66ch; }
+a { color: var(--gox); }
+.eyebrow { font-family: var(--mono); font-size: var(--step--1); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+section { padding-block: 64px 24px; }
+.sec-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 28px; }
+.sec-head p { color: var(--muted); }
+
+/* header */
+header.top { border-bottom: 1px solid var(--rule); }
+.top .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 14px; }
+.top nav { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: var(--step--1); }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover, .top nav a:focus-visible { color: var(--ink); }
+.brand { font-family: var(--display); font-weight: 700; font-size: 1.15rem; letter-spacing: .04em; text-transform: uppercase; }
+.top .right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+.lang { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+.lang button { font: 500 .72rem/1 var(--mono); letter-spacing: .06em; padding: 7px 10px; background: transparent; color: var(--muted); border: 0; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.hero { padding-block: 40px 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.hero h1 { font-size: var(--step-4); font-weight: 700; max-width: 18ch; }
+.hero p.lede { font-size: var(--step-1); color: var(--muted); max-width: 60ch; }
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); border-top: 2px solid var(--ink); margin-top: 8px; }
+.fig { padding: 12px 14px 14px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 2px; }
+.fig b { font-family: var(--display); font-size: 2.1rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.fig b small { font-size: 1rem; font-weight: 500; margin-left: 3px; color: var(--muted); }
+.fig span { font-size: var(--step--1); color: var(--muted); }
+.phase-switch { display: inline-flex; border: 1px solid var(--ink); border-radius: 3px; overflow: hidden; width: max-content; max-width: 100%; }
+.phase-switch button { font: 500 var(--step--1)/1 var(--mono); padding: 9px 12px; background: transparent; color: var(--ink); border: 0; cursor: pointer; }
+.phase-switch button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.hero-row { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+.hero-row .note { font-size: var(--step--1); color: var(--muted); max-width: 52ch; }
+
+/* simulator */
+.sim { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 0; border: 1px solid var(--rule); background: var(--panel); }
+@media (max-width: 960px) { .sim { grid-template-columns: minmax(0, 1fr); } }
+.pid-box { position: relative; border-right: 1px solid var(--rule); min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; }
+@media (max-width: 960px) { .pid-box { border-right: 0; border-bottom: 1px solid var(--rule); } }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-size: var(--step--1); }
+.state-pill { font-family: var(--mono); font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; padding: 4px 9px; border-radius: 2px; border: 1px solid currentColor; }
+.state-pill[data-s="safe"] { color: var(--ok); }
+.state-pill[data-s="armed"] { color: var(--warn); }
+.state-pill[data-s="firing"] { color: var(--hot); background: color-mix(in srgb, var(--hot) 12%, transparent); }
+.state-pill[data-s="abort"], .state-pill[data-s="estop"] { color: var(--paper); background: var(--hot); border-color: var(--hot); }
+.pid-scroll { overflow-x: auto; }
+#pid { display: block; width: 100%; min-width: 640px; height: auto; }
+#pid text { font-family: var(--mono); font-size: 10.5px; fill: var(--ink); }
+#pid text.q { fill: var(--muted); }
+#pid .line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+#pid .line.big { stroke-width: 5; }
+#pid .flow { fill: none; stroke: var(--dash); stroke-width: 1.6; stroke-dasharray: 3 9; stroke-linecap: round; opacity: 0; transition: opacity .2s; }
+#pid .flow.big { stroke-width: 2.4; }
+#pid .flow.on { opacity: 1; }
+#pid .comp { cursor: pointer; }
+#pid .comp:focus { outline: none; }
+#pid .comp:focus-visible .hit, #pid .comp.sel .hit { stroke: var(--ink); stroke-dasharray: 2 2; }
+#pid .hit { fill: transparent; stroke: transparent; }
+#pid .vb { stroke: var(--ink); stroke-width: 1.4; fill: var(--panel); transition: fill .15s; }
+#pid .comp.closed .vb { fill: var(--ink); }
+#pid .act { stroke: var(--ink); stroke-width: 1.2; fill: var(--panel); }
+#pid .comp.energized .act { fill: var(--warn); }
+#pid .bub { fill: var(--panel); stroke: var(--n2); stroke-width: 1.2; }
+#pid .tap { stroke: var(--n2); stroke-width: 1.1; }
+#pid .tank { stroke-width: 1.5; }
+#pid .relief-flash { fill: none; stroke: var(--hot); stroke-width: 2; opacity: 0; }
+#pid .relief-flash.on { opacity: 1; animation: blink .5s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 14px; border-top: 1px solid var(--rule); font-size: .75rem; color: var(--muted); font-family: var(--mono); }
+.legend i { display: inline-block; width: 16px; height: 4px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+
+.console { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; min-width: 0; }
+.console > div { padding: 14px; border-bottom: 1px solid var(--rule); }
+.console > div:last-child { border-bottom: 0; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+button.b { font: 600 .9rem/1 var(--display); letter-spacing: .08em; text-transform: uppercase; padding: 11px 16px; border-radius: 3px; border: 1px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer; }
+button.b:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+button.b:disabled { opacity: .35; cursor: not-allowed; }
+button.b.fire { background: var(--hot); border-color: var(--hot); color: #fff; }
+button.b.fire:hover:not(:disabled) { background: color-mix(in srgb, var(--hot) 85%, #000); }
+button.b.estop { border-color: var(--hot); color: var(--hot); margin-left: auto; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--gox); outline-offset: 2px; }
+.lab { display: flex; justify-content: space-between; gap: 8px; font-size: var(--step--1); color: var(--muted); margin-bottom: 6px; }
+.lab b { color: var(--ink); font-family: var(--mono); font-weight: 500; }
+input[type=range] { width: 100%; accent-color: var(--hot); }
+.readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+.ro { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
+.ro:nth-last-child(-n+3) { border-bottom: 0; }
+.ro span { display: block; font-size: .72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ro b { font-family: var(--mono); font-weight: 500; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.ro b small { font-size: .72rem; color: var(--muted); margin-left: 2px; }
+.ro.alarm b { color: var(--hot); }
+#chart { width: 100%; height: 150px; display: block; }
+.chart-key { display: flex; gap: 14px; font-size: .72rem; font-family: var(--mono); color: var(--muted); margin-top: 4px; flex-wrap: wrap; }
+.chart-key i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 5px; }
+.faults { display: grid; gap: 6px; }
+.faults label { display: flex; gap: 8px; align-items: flex-start; font-size: var(--step--1); cursor: pointer; }
+.faults input { margin-top: 3px; accent-color: var(--hot); }
+.log { font-family: var(--mono); font-size: .74rem; line-height: 1.6; max-height: 150px; overflow-y: auto; color: var(--muted); }
+.log div b { color: var(--ink); font-weight: 500; }
+.log .warn b { color: var(--warn); }
+.log .bad b { color: var(--hot); }
+.seq { display: flex; gap: 0; font-family: var(--mono); font-size: .68rem; border: 1px solid var(--rule); overflow-x: auto; }
+.seq span { flex: 1 0 auto; padding: 5px 7px; color: var(--muted); border-right: 1px solid var(--rule); white-space: nowrap; }
+.seq span:last-child { border-right: 0; }
+.seq span.on { background: var(--ink); color: var(--paper); }
+.seq span.done { color: var(--ink); }
+.pid-tip { font-size: .75rem; color: var(--muted); padding: 8px 14px 0; }
+/* component pop-up */
+.pop { position: absolute; z-index: 5; width: min(440px, calc(100% - 16px)); background: var(--panel); border: 1px solid var(--ink); box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 22%, transparent); display: grid; grid-template-columns: 150px minmax(0, 1fr); }
+.pop-fig { margin: 0; background: color-mix(in srgb, var(--ink) 4%, var(--panel)); border-right: 1px solid var(--rule); display: grid; grid-template-rows: auto 1fr; }
+.pop-fig .art { aspect-ratio: 4 / 3; display: grid; place-items: center; padding: 8px; overflow: hidden; }
+.pop-fig img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pop-fig svg { width: 100%; height: auto; display: block; }
+.pop-fig figcaption { font: .66rem/1.4 var(--mono); color: var(--muted); padding: 6px 8px 9px; display: grid; gap: 3px; align-content: start; }
+.pop-fig figcaption a { color: var(--gox); }
+.pop-body { padding: 12px 36px 14px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.pop-body h4 { margin: 0; font: 600 1.2rem/1.1 var(--display); letter-spacing: .02em; }
+.pop-body p { font-size: var(--step--1); }
+.pop-body .eyebrow { color: var(--gox); font-size: .7rem; }
+.pop-extra { color: var(--hot); font-family: var(--mono); font-size: .72rem !important; }
+.pop-x { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; border-radius: 3px; }
+.pop-x:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+@media (max-width: 640px) {
+  .pop { position: fixed; left: 0 !important; right: 0; bottom: 0; top: auto !important; width: auto; grid-template-columns: 112px minmax(0, 1fr); border-width: 1px 0 0; max-height: 62vh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+}
+.art .br { fill: color-mix(in srgb, var(--brass) 55%, var(--panel)); }
+.art .st { fill: color-mix(in srgb, var(--n2) 38%, var(--panel)); }
+.art .al { fill: color-mix(in srgb, var(--n2) 16%, var(--panel)); }
+.art .dk { fill: color-mix(in srgb, var(--ink) 80%, var(--panel)); }
+.art .gr { fill: color-mix(in srgb, var(--ink) 50%, var(--panel)); }
+.art .wh { fill: var(--panel); }
+.art .bl { fill: color-mix(in srgb, var(--gox) 50%, var(--panel)); }
+.art .or { fill: color-mix(in srgb, var(--fuel) 55%, var(--panel)); }
+.art .pp { fill: color-mix(in srgb, var(--prop) 50%, var(--panel)); }
+.art .yl { fill: color-mix(in srgb, var(--warn) 75%, var(--panel)); }
+.art .rd { fill: color-mix(in srgb, var(--hot) 70%, var(--panel)); }
+.art * { stroke: var(--ink); stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; }
+.art .nl { fill: none; }
+.art .ns { stroke: none; }
+.art text { fill: var(--muted); stroke: none; font: 9px var(--mono); }
+.hint { font-size: .75rem; color: var(--muted); }
+
+/* 3D */
+.eng { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); border: 1px solid var(--rule); background: var(--panel); }
+@media (max-width: 960px) { .eng { grid-template-columns: minmax(0, 1fr); } }
+.view3d { display: grid; grid-template-rows: auto auto; border-right: 1px solid var(--rule); min-width: 0; }
+@media (max-width: 960px) { .view3d { border-right: 0; border-bottom: 1px solid var(--rule); } }
+.stage { position: relative; height: 600px; }
+@media (max-width: 960px) { .stage { height: 420px; } }
+#three { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.cap { position: absolute; left: 12px; right: 12px; top: 12px; display: grid; gap: 6px; justify-items: start; pointer-events: none; }
+.cap > div { background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--rule); padding: 6px 10px; max-width: min(46ch, 100%); }
+.stepcap { font: .74rem/1.4 var(--mono); }
+.stepcap b { color: var(--hot); font-weight: 500; }
+.partcap { font-size: var(--step--1); border-left: 3px solid var(--gox) !important; }
+.partcap strong { display: block; font-family: var(--display); font-size: 1.1rem; font-weight: 600; letter-spacing: .02em; }
+.partcap span { color: var(--muted); }
+.stage .fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font-size: var(--step--1); }
+.view3d .tools { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--rule); }
+.view3d .tools .rng { flex: 1 1 200px; min-width: 0; }
+.view3d .tools .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button.b.sm { padding: 8px 11px; font-size: .78rem; }
+.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: var(--step--1); cursor: pointer; }
+.parts { display: grid; align-content: start; }
+.parts ol { list-style: none; margin: 0; padding: 0; }
+.parts li button { width: 100%; text-align: left; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; padding: 9px 14px; background: transparent; border: 0; border-bottom: 1px solid var(--rule); color: var(--ink); font: inherit; font-size: var(--step--1); cursor: pointer; }
+.parts li button:hover, .parts li button[aria-pressed="true"] { background: color-mix(in srgb, var(--gox) 9%, transparent); }
+.parts li button .n { font-family: var(--mono); color: var(--muted); }
+.parts li button .d { display: none; color: var(--muted); grid-column: 2; }
+.parts li button[aria-pressed="true"] .d { display: block; }
+.parts li button strong { font-weight: 600; }
+
+/* reasoning rows */
+.rows { border-top: 2px solid var(--ink); }
+.row { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr) minmax(0, 200px); gap: 12px 28px; padding: 18px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+@media (max-width: 800px) { .row { grid-template-columns: minmax(0, 1fr); } }
+.row h3 { font-size: 1.35rem; }
+.row .num { font-family: var(--mono); font-size: var(--step--1); color: var(--muted); }
+.row .num b { display: block; font-family: var(--display); font-size: 1.6rem; color: var(--ink); font-weight: 600; }
+.row .try { font-size: var(--step--1); }
+.row button.link { font: inherit; color: var(--gox); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+/* tables */
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: var(--step--1); }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--mono); font-weight: 500; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+@media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } }
+
+/* campaign */
+.camp { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); border-top: 2px solid var(--ink); }
+.camp li { counter-increment: s; padding: 14px 16px 16px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 4px; align-content: start; }
+.camp li::before { content: counter(s, decimal-leading-zero); font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+.camp li b { font-family: var(--display); font-size: 1.15rem; font-weight: 600; letter-spacing: .02em; }
+.camp li span { font-size: var(--step--1); color: var(--muted); }
+.camp li.hot b::after { content: " · hot"; color: var(--hot); font-family: var(--mono); font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; }
+
+.budget { display: grid; gap: 8px; }
+.bline { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr) 70px; gap: 12px; align-items: center; font-size: var(--step--1); }
+.bline .track { height: 10px; background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.bline .track i { display: block; height: 100%; background: var(--ink); }
+.bline .v { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+footer { border-top: 1px solid var(--rule); margin-top: 48px; }
+footer .wrap { padding-block: 24px 40px; display: grid; gap: 6px; font-size: var(--step--1); color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Pintle Engine PoC</div>
+    <div class="right">
+    <nav aria-label="Sections">
+      <a href="#simulator">Simulator</a>
+      <a href="#engine">Engine</a>
+      <a href="#why">Design choices</a>
+      <a href="#safety">Safety</a>
+      <a href="#campaign">Test campaign</a>
+      <a href="#lander">Road to the lander</a>
+    </nav>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="pt" aria-pressed="false">PT-BR</button>
+    </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div class="eyebrow">LASC Lander Challenge · engine development article</div>
+    <h1>A throttleable rocket engine built on a lathe, flown from 100 m away</h1>
+    <p class="lede">Gaseous oxygen and ethanol meet at a brass pintle inside a graphite liner. Every valve is driven by the pad computer, every step is gated by a measurement, and the whole stand carries over to the lander.</p>
+    <div class="hero-row">
+      <div class="phase-switch" role="group" aria-label="Regulator phase">
+        <button type="button" id="ph1" aria-pressed="true">Phase one · 15 bar regulator</button>
+        <button type="button" id="ph2" aria-pressed="false">Phase two · 24 bar regulator</button>
+      </div>
+      <p class="note">Same engine, tank and valves in both phases. Only the oxygen regulator and the pintle tip change.</p>
+    </div>
+    <div class="figs" id="figs">
+      <div class="fig"><b id="f-thrust">240<small>N</small></b><span>Thrust at sea level</span></div>
+      <div class="fig"><b id="f-pc">9.4<small>bar</small></b><span>Chamber pressure</span></div>
+      <div class="fig"><b id="f-mdot">128<small>g/s</small></b><span>Total propellant flow</span></div>
+      <div class="fig"><b>1.3<small>O/F</small></b><span>Fuel-rich mixture ratio</span></div>
+      <div class="fig"><b>40<small>%</small></b><span>Throttle floor, same as the lander</span></div>
+      <div class="fig"><b>10<small>s</small></b><span>Burn length per firing</span></div>
+    </div>
+  </div>
+
+  <section id="simulator">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Live simulator</div>
+        <h2>Fire it from the control table</h2>
+        <p>Arm the stand, fire, and drag the throttle during the burn. Flow animates in each line, closed valves turn solid, and the sequencer aborts on its own when a check fails. Click any component in the schematic for a picture and what it does, or inject a fault to watch the safety logic work. The model is simplified, with the numbers from the design point.</p>
+      </div>
+
+      <div class="sim">
+        <div class="pid-box">
+          <div class="bar">
+            <span class="state-pill" id="state" data-s="safe">Safe</span>
+            <span class="mono" id="clock">T −</span>
+            <span class="hint">Click any component to see what it is. While safe or armed, click a valve a second time to open or close it by hand (cold-flow mode).</span>
+          </div>
+          <div class="pid-scroll"><svg id="pid" viewBox="0 0 940 650" role="img" aria-label="Fluid schematic of the proof-of-concept engine with live flow"></svg></div>
+          <div class="legend">
+            <span><i style="background:var(--gox)"></i>Oxygen</span>
+            <span><i style="background:var(--fuel)"></i>Ethanol</span>
+            <span><i style="background:var(--n2)"></i>Nitrogen</span>
+            <span><i style="background:var(--prop)"></i>Propane</span>
+            <span>■ solid valve = closed</span>
+            <span>yellow actuator = energized</span>
+          </div>
+          <div class="pop" id="pop" hidden role="dialog" aria-labelledby="pop-title">
+            <figure class="pop-fig">
+              <div class="art" id="pop-art"></div>
+              <figcaption><span id="pop-cap">Illustration</span><a id="pop-link" href="#" target="_blank" rel="noopener">See real photos ↗</a></figcaption>
+            </figure>
+            <div class="pop-body">
+              <div class="eyebrow" id="pop-kind"></div>
+              <h4 id="pop-title"></h4>
+              <p id="pop-text"></p>
+              <p class="pop-extra" id="pop-extra" hidden></p>
+            </div>
+            <button class="pop-x" id="pop-x" type="button" aria-label="Close">×</button>
+          </div>
+        </div>
+
+        <div class="console">
+          <div>
+            <div class="btns">
+              <button class="b" id="btn-arm" type="button">Arm</button>
+              <button class="b fire" id="btn-fire" type="button" disabled>Fire</button>
+              <button class="b" id="btn-safe" type="button">Safe</button>
+              <button class="b estop" id="btn-estop" type="button">E-stop</button>
+            </div>
+          </div>
+          <div>
+            <div class="lab"><label for="thr">Throttle setpoint</label><b id="thr-v">100%</b></div>
+            <input type="range" id="thr" min="40" max="100" step="5" value="100">
+            <div class="lab" style="margin-top:10px"><label for="speed">Simulation speed</label><b id="speed-v">1×</b></div>
+            <input type="range" id="speed" min="1" max="10" step="1" value="1">
+          </div>
+          <div>
+            <div class="readouts" id="readouts"></div>
+          </div>
+          <div>
+            <canvas id="chart" aria-label="Chamber pressure, thrust and sleeve temperature over the last 30 seconds"></canvas>
+            <div class="chart-key">
+              <span><i style="background:var(--hot)"></i>Chamber pressure, bar</span>
+              <span><i style="background:var(--gox)"></i>Thrust, N ÷ 20</span>
+              <span><i style="background:var(--warn)"></i>Sleeve, °C ÷ 10</span>
+            </div>
+          </div>
+          <div>
+            <div class="seq" id="seq"></div>
+          </div>
+          <div>
+            <div class="eyebrow" style="margin-bottom:8px">Inject a fault</div>
+            <div class="faults">
+              <label><input type="checkbox" id="fx-reg1"> Nitrogen regulator fails high (watch RV-1 lift at 30 bar)</label>
+              <label><input type="checkbox" id="fx-ign"> Igniter does not light</label>
+              <label><input type="checkbox" id="fx-droop"> Oxygen cylinder runs low during the burn</label>
+              <label><input type="checkbox" id="fx-ins"> Liner insulation left out</label>
+            </div>
+          </div>
+          <div>
+            <div class="eyebrow" style="margin-bottom:6px">Event log</div>
+            <div class="log" id="log" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="engine">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Hardware</div>
+        <h2>Eleven parts, all lathe work</h2>
+        <p>Drag to orbit, scroll or pinch to zoom. Pick a part on the model or in the list and the camera flies to it. The exploded view follows the assembly order, so every part leaves the way it goes in; Play assembly puts it back together step by step. Dimensions follow the 400 N design, and the SolidWorks models can replace these shapes later.</p>
+      </div>
+      <div class="eng">
+        <div class="view3d">
+          <div class="stage">
+            <canvas id="three"></canvas>
+            <div class="fallback" id="fallback3d" hidden>The 3D view needs WebGL, which this browser has turned off. The part list on the right still describes every part.</div>
+            <div class="cap"><div class="stepcap" id="stepcap" hidden></div><div class="partcap" id="partcap" hidden></div></div>
+          </div>
+          <div class="tools">
+            <div class="rng"><div class="lab"><label for="explode">Exploded view</label><b id="explode-v">0%</b></div><input type="range" id="explode" min="0" max="100" value="0"></div>
+            <div class="acts">
+              <button class="b sm" id="play" type="button">Play assembly</button>
+              <button class="b sm" id="reset3d" type="button">Reset view</button>
+            </div>
+            <label class="toggle"><input type="checkbox" id="cut"> Half section</label>
+            <label class="toggle"><input type="checkbox" id="plume"> Hot fire</label>
+          </div>
+        </div>
+        <div class="parts">
+          <ol id="partlist"></ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Design choices</div>
+        <h2>Why it is built this way</h2>
+        <p>Every material here is something the team can buy and machine today: 6063 aluminium, brass, stainless, graphite and copper refrigeration tube. Each choice below follows from that.</p>
+      </div>
+      <div class="rows">
+        <div class="row"><h3>Chamber pressure is set by the regulator</h3><p>At 15 bar the 6063 sleeve sees about 10 MPa of hoop stress, under a tenth of its yield. The real limit is the oxygen regulator: the venturi needs about 25% more pressure upstream than the injector, and the valves take 2 to 3 bar more. Phase one runs a 15 bar regulator at 9.5 bar chamber pressure; phase two adds a 24 bar regulator for the full 15 bar.</p><div class="num"><b>10 MPa</b>sleeve hoop stress at 15 bar, against 110 MPa yield</div></div>
+        <div class="row"><h3>A graphite liner takes the flame</h3><p>The gas is near 2,900 K. Aluminium melts at 660 °C and burns in oxygen, so a bare 6063 chamber would fail in the first second. One piece of graphite forms the chamber, throat and nozzle, and it slides out for inspection after every firing.</p><div class="num"><b>Ø16.0 mm</b>throat, checked after each firing for erosion</div></div>
+        <div class="row"><h3>Ceramic paper keeps the sleeve cool</h3><p>Graphite heats through in about 2 s. Three millimetres of ceramic paper slows the heat into the sleeve, centres the brittle liner and absorbs the difference in expansion: aluminium grows about six times more per degree than graphite.</p><div class="num"><b>~20 kW/m²</b>heat into the sleeve through the paper<br><span class="try"><button class="link" type="button" data-fault="fx-ins">Try it without the paper</button></span></div></div>
+        <div class="row"><h3>The sonic venturi is the flowmeter</h3><p>While the gas in its throat is at the speed of sound, oxygen flow depends only on the inlet pressure and temperature. One transducer and one thermocouple make it a flowmeter, and the choked throat stops chamber pressure swings from travelling back up the line.</p><div class="num"><b>Ø5.4 mm</b>venturi throat, choked below 85% of inlet pressure</div></div>
+        <div class="row"><h3>Two throttle actuators, on purpose</h3><p>Oxygen is throttled by a 1/2 in ball valve on a 150 kg·cm servo, because no small needle valve passes 290 Nm³/h. Ethanol is throttled by a needle valve on a NEMA 17 stepper, which gives fine steps on the liquid side. Flying one of each shows which actuator the lander should use.</p><div class="num"><b>3–6 N·m</b>ball-valve breakaway torque at 24 bar</div></div>
+        <div class="row"><h3>Tie rods with disc springs</h3><p>Four M8 A2-70 rods clamp the head, sleeve and retainer plate. Heat cycles loosen nuts more than vibration does, so disc springs keep the clamp load steady as parts grow, all-metal lock nuts sit at the hot end, and paint stripes show any movement.</p><div class="num"><b>2.2×</b>rod safety factor at the 30 bar worst case</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="safety">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Safety</div>
+        <h2>It fails safe without software</h2>
+        <p>Cutting power is always the safe move. The E-stop loop drops solenoid power through a relay: main valves close and nitrogen purges open, with no code involved. High-pressure oxygen is only ever opened by hand.</p>
+      </div>
+      <div class="two">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Device</th><th>With power lost</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td>SV-1, SV-2 main valves</td><td>Close</td><td>Normally-closed solenoids stop both propellants</td></tr>
+              <tr><td>SV-3, SV-4 igniter</td><td>Close</td><td>No torch gas without a command</td></tr>
+              <tr><td>PV-1, PV-2 purges</td><td>Open</td><td>Normally-open solenoids flush both manifolds with nitrogen</td></tr>
+              <tr><td>RV-1, RV-2 reliefs</td><td>Open at 30 bar</td><td>Spring-loaded, no power needed</td></tr>
+              <tr><td>CV-1 to CV-4</td><td>Block backflow</td><td>Fuel cannot reach the oxygen side, or the reverse</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Automatic abort when</th><th>Check</th></tr></thead>
+            <tbody>
+              <tr><td>No torch flame 0.3 s after the spark</td><td class="n">TC-5</td></tr>
+              <tr><td>Chamber below a third of full pressure 0.3 s after fuel opens</td><td class="n">PT-5</td></tr>
+              <tr><td>Chamber pressure off its setpoint by more than 20%</td><td class="n">PT-5</td></tr>
+              <tr><td>Sleeve above 120 °C</td><td class="n">TC-1</td></tr>
+              <tr><td>Venturi no longer choked</td><td class="n">PT-1, PT-2</td></tr>
+              <tr><td>Fuel tank pressure dropping toward the chamber</td><td class="n">PT-3</td></tr>
+              <tr><td>Telemetry link lost for 200 ms, or E-stop</td><td class="n">Hardware</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="campaign">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Test campaign</div>
+        <h2>Twelve gates before the showcase firing</h2>
+        <p>Each step has a written procedure and a go/no-go, and the next starts only after the one before it passed. Nitrogen stands in for oxygen in every cold flow. Hot steps need the mentor present.</p>
+      </div>
+      <ol class="camp">
+        <li><b>Clean and leak-check</b><span>Oxygen-clean the GOX side, leak-check everything with nitrogen at 25 bar</span></li>
+        <li><b>Hydrostatic proof</b><span>Fuel tank and engine with the throat plugged, water at 45 bar</span></li>
+        <li><b>Electronics bench test</b><span>Every abort path, E-stop, power loss and link loss, with no gas</span></li>
+        <li><b>Fuel cold flow</b><span>Water through the injector: flow against pressure drop, spray on camera</span></li>
+        <li><b>Oxygen-side cold flow</b><span>Nitrogen through the venturi and annulus, then both sides together</span></li>
+        <li><b>Throttle mapping</b><span>Map both throttle valves and tune the control loops on cold flows</span></li>
+        <li><b>Igniter alone</b><span>At least 20 lights, timing command to flame</span></li>
+        <li class="hot"><b>Ignition pops</b><span>0.5 s, then 1 s at 60% flow</span></li>
+        <li class="hot"><b>Short firings</b><span>3 s and 5 s at full flow, throat measured after each</span></li>
+        <li class="hot"><b>Steady 10 s firings</b><span>c* efficiency from chamber pressure and measured flows</span></li>
+        <li class="hot"><b>Throttle steps</b><span>100% to 60% and back, open-loop, then closed-loop on chamber pressure</span></li>
+        <li class="hot"><b>Showcase firing</b><span>Filmed for sponsors and the milestone report</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="lander">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Road to the lander</div>
+        <h2>Same chamber pressure, half the thrust</h2>
+        <p>The stand, sequencer, control loops, pintle fuel side, liner construction and procedures carry over unchanged. The lander engine swaps gaseous oxygen for liquid N2O and doubles the flow.</p>
+      </div>
+      <div class="two">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th></th><th>Proof of concept</th><th>Lander engine</th></tr></thead>
+            <tbody>
+              <tr><td>Propellants</td><td>GOX and ethanol</td><td>Liquid N2O and ethanol</td></tr>
+              <tr><td>Thrust</td><td class="n">240 N → 400 N</td><td class="n">900 N</td></tr>
+              <tr><td>Chamber pressure</td><td class="n">9.5 → 15 bar</td><td class="n">15 bar</td></tr>
+              <tr><td>Mixture ratio</td><td class="n">1.3</td><td class="n">3.5</td></tr>
+              <tr><td>Total flow</td><td class="n">128 → 204 g/s</td><td class="n">496 g/s</td></tr>
+              <tr><td>Throat, chamber</td><td class="n">Ø16, Ø40 mm</td><td class="n">Ø25, Ø56 mm</td></tr>
+              <tr><td>Burn</td><td class="n">10 s</td><td class="n">20 s</td></tr>
+              <tr><td>Throttle</td><td>To 60%, 40% stretch</td><td>To 40%, held within ±5%</td></tr>
+              <tr><td>Oxidizer feed</td><td>Regulated gas</td><td>Self-pressurized liquid, 50–63 bar</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3 style="margin-bottom:6px">Phase-one budget</h3>
+          <p class="hint" style="margin-bottom:14px">About R$13,100 in total, R$11,600 with borrowed safety gear. Estimates for late 2026, not quotes.</p>
+          <div class="budget" id="budget"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Pintle Engine PoC · ground test article for the LASC Lander Challenge, Planetary Lander category.</span>
+    <span>Numbers are first-pass hand calculations, to be confirmed in CEA, Ansys and SolidWorks before any metal is cut. The simulator is a teaching model, not a substitute for the test data.</span>
+  </div>
+</footer>
+
+<script>
+/* PT-BR strings, keyed by the English text */
+window.PT_BR = {
+"1.5 L": "1,5 L",
+"1.3": "1,3",
+"3.5": "3,5",
+"9.5 → 15 bar": "9,5 → 15 bar",
+"Simulator": "Simulador",
+"Engine": "Motor",
+"Design choices": "Escolhas de projeto",
+"Safety": "Segurança",
+"Test campaign": "Campanha de testes",
+"Road to the lander": "Caminho até o lander",
+"LASC Lander Challenge · engine development article": "LASC Lander Challenge · artigo de desenvolvimento do motor",
+"A throttleable rocket engine built on a lathe, flown from 100 m away": "Um motor-foguete com empuxo variável feito no torno, acionado a 100 m de distância",
+"Gaseous oxygen and ethanol meet at a brass pintle inside a graphite liner. Every valve is driven by the pad computer, every step is gated by a measurement, and the whole stand carries over to the lander.": "Oxigênio gasoso e etanol se encontram em um pintle de latão dentro de um liner de grafite. Todas as válvulas são acionadas pelo computador de solo, cada etapa só avança após uma medição, e toda a bancada é reaproveitada no lander.",
+"Phase one · 15 bar regulator": "Fase um · regulador de 15 bar",
+"Phase two · 24 bar regulator": "Fase dois · regulador de 24 bar",
+"Same engine, tank and valves in both phases. Only the oxygen regulator and the pintle tip change.": "Mesmo motor, tanque e válvulas nas duas fases. Só mudam o regulador de oxigênio e a ponta do pintle.",
+"Thrust at sea level": "Empuxo ao nível do mar",
+"Chamber pressure": "Pressão de câmara",
+"Total propellant flow": "Vazão total de propelente",
+"Fuel-rich mixture ratio": "Razão de mistura rica em combustível",
+"Throttle floor, same as the lander": "Empuxo mínimo, igual ao do lander",
+"Burn length per firing": "Duração de cada queima",
+"Live simulator": "Simulador ao vivo",
+"Fire it from the control table": "Dispare da mesa de controle",
+"Arm the stand, fire, and drag the throttle during the burn. Flow animates in each line, closed valves turn solid, and the sequencer aborts on its own when a check fails. Click any component in the schematic for a picture and what it does, or inject a fault to watch the safety logic work. The model is simplified, with the numbers from the design point.": "Arme a bancada, dispare e arraste o acelerador durante a queima. O escoamento é animado em cada linha, válvulas fechadas ficam sólidas e o sequenciador aborta sozinho quando uma verificação falha. Clique em qualquer componente do esquema para ver uma imagem e o que ele faz, ou injete uma falha para ver a lógica de segurança em ação. O modelo é simplificado, com os números do ponto de projeto.",
+"Safe": "Seguro",
+"Click any component to see what it is. While safe or armed, click a valve a second time to open or close it by hand (cold-flow mode).": "Clique em qualquer componente para ver o que ele é. Em seguro ou armado, clique uma segunda vez em uma válvula para abri-la ou fechá-la manualmente (modo de escoamento a frio).",
+"propane": "propano",
+"Fuel tank · Ethanol tank": "Tanque de combustível · Tanque de etanol",
+"Ethanol": "Etanol",
+"REG-1 · Nitrogen regulator": "REG-1 · Regulador de nitrogênio",
+"REG-2 · Oxygen regulator": "REG-2 · Regulador de oxigênio",
+"PT-6 · Nitrogen pressure": "PT-6 · Pressão de nitrogênio",
+"PV-1 · Fuel-side purge": "PV-1 · Purga do lado do combustível",
+"CV-3 · Purge check valve": "CV-3 · Válvula de retenção da purga",
+"PV-2 · Oxygen-side purge": "PV-2 · Purga do lado do oxigênio",
+"CV-4 · Purge check valve": "CV-4 · Válvula de retenção da purga",
+"RV-1 · Fuel tank relief": "RV-1 · Alívio do tanque de combustível",
+"VV-1 · Tank vent": "VV-1 · Respiro do tanque",
+"PT-3 · Tank pressure": "PT-3 · Pressão do tanque",
+"TC-7 · Ethanol temperature": "TC-7 · Temperatura do etanol",
+"SV-1 · Main fuel valve": "SV-1 · Válvula principal de combustível",
+"TV-1 · Fuel throttle": "TV-1 · Estrangulamento do combustível",
+"CV-1 · Fuel check valve": "CV-1 · Válvula de retenção de combustível",
+"PT-4 · Fuel manifold pressure": "PT-4 · Pressão do manifold de combustível",
+"RV-2 · Oxygen line relief": "RV-2 · Alívio da linha de oxigênio",
+"F-1 · Oxygen filter": "F-1 · Filtro de oxigênio",
+"SV-2 · Main oxygen valve": "SV-2 · Válvula principal de oxigênio",
+"TV-2 · Oxygen throttle": "TV-2 · Estrangulamento do oxigênio",
+"PT-1 · Venturi inlet pressure": "PT-1 · Pressão de entrada do venturi",
+"TT-1 · Venturi inlet temperature": "TT-1 · Temperatura de entrada do venturi",
+"V-1 · Oxygen flowmeter": "V-1 · Medidor de vazão de oxigênio",
+"PT-2 · Oxygen manifold pressure": "PT-2 · Pressão do manifold de oxigênio",
+"CV-2 · Oxygen check valve": "CV-2 · Válvula de retenção de oxigênio",
+"TC-6 · Regulator body": "TC-6 · Corpo do regulador",
+"NV-1 · Torch oxygen trim": "NV-1 · Ajuste de oxigênio da tocha",
+"SV-3 · Torch oxygen": "SV-3 · Oxigênio da tocha",
+"SV-4 · Torch propane": "SV-4 · Propano da tocha",
+"Engine · Pintle engine": "Motor · Motor com pintle",
+"240 N, 9.4 bar": "240 N, 9,4 bar",
+"IG-1 · Torch igniter": "IG-1 · Ignitor tocha",
+"PT-5 · Chamber pressure": "PT-5 · Pressão de câmara",
+"TC-1 · Sleeve temperature": "TC-1 · Temperatura da camisa",
+"LC-1 · Thrust": "LC-1 · Empuxo",
+"nitrogen purge": "purga de nitrogênio",
+"igniter oxygen": "oxigênio do ignitor",
+"Oxygen": "Oxigênio",
+"Nitrogen": "Nitrogênio",
+"Propane": "Propano",
+"■ solid valve = closed": "■ válvula sólida = fechada",
+"yellow actuator = energized": "atuador amarelo = energizado",
+"Illustration": "Ilustração",
+"See real photos ↗": "Ver fotos reais ↗",
+"Arm": "Armar",
+"Fire": "Disparar",
+"E-stop": "Emergência",
+"Throttle setpoint": "Setpoint de empuxo",
+"Simulation speed": "Velocidade da simulação",
+"Chamber": "Câmara",
+"Thrust": "Empuxo",
+"Mixture O/F": "Mistura O/F",
+"Oxygen flow": "Vazão de oxigênio",
+"Ethanol flow": "Vazão de etanol",
+"Venturi inlet": "Entrada do venturi",
+"Fuel tank": "Tanque de combustível",
+"Sleeve": "Camisa",
+"Liner (est.)": "Liner (est.)",
+"Chamber pressure, bar": "Pressão de câmara, bar",
+"Thrust, N ÷ 20": "Empuxo, N ÷ 20",
+"Sleeve, °C ÷ 10": "Camisa, °C ÷ 10",
+"T−1.0 igniter": "T−1.0 ignitor",
+"T−0.2 oxygen": "T−0.2 oxigênio",
+"T0 fuel": "T0 combustível",
+"T+0.5 ramp": "T+0.5 rampa",
+"Run": "Regime",
+"Shutdown": "Desligamento",
+"Inject a fault": "Injetar uma falha",
+"Nitrogen regulator fails high (watch RV-1 lift at 30 bar)": "Regulador de nitrogênio falha em alta (veja o RV-1 abrir a 30 bar)",
+"Igniter does not light": "Ignitor não acende",
+"Oxygen cylinder runs low during the burn": "Cilindro de oxigênio acabando durante a queima",
+"Liner insulation left out": "Liner montado sem o isolamento",
+"Event log": "Registro de eventos",
+"Stand safe. Press Arm, wait for 24 bar in the tank, then Fire.": "Bancada segura. Pressione Armar, aguarde 24 bar no tanque e então Disparar.",
+"Hardware": "Hardware",
+"Eleven parts, all lathe work": "Onze peças, todas feitas no torno",
+"Drag to orbit, scroll or pinch to zoom. Pick a part on the model or in the list and the camera flies to it. The exploded view follows the assembly order, so every part leaves the way it goes in; Play assembly puts it back together step by step. Dimensions follow the 400 N design, and the SolidWorks models can replace these shapes later.": "Arraste para orbitar, role ou faça pinça para dar zoom. Escolha uma peça no modelo ou na lista e a câmera vai até ela. A vista explodida segue a ordem de montagem, então cada peça sai pelo mesmo caminho por onde entra; Animar montagem remonta tudo passo a passo. As dimensões seguem o projeto de 400 N, e os modelos do SolidWorks podem substituir essas formas depois.",
+"The 3D view needs WebGL, which this browser has turned off. The part list on the right still describes every part.": "A vista 3D precisa de WebGL, que está desativado neste navegador. A lista de peças à direita continua descrevendo cada peça.",
+"Exploded view": "Vista explodida",
+"Play assembly": "Animar montagem",
+"Reset view": "Redefinir vista",
+"Half section": "Meio corte",
+"Hot fire": "Teste a quente",
+"Injector head": "Cabeçote injetor",
+"Brass C360, Ø110 × 50 mm with a Ø66 spigot. A ring groove feeds the 1.42 mm oxygen annulus; an FKM o-ring seals the cool spigot.": "Latão C360, Ø110 × 50 mm com ressalto de Ø66. Uma ranhura anular alimenta o anel de oxigênio de 1,42 mm; um o-ring de FKM veda o ressalto, que trabalha frio.",
+"Pintle tip": "Ponta do pintle",
+"Screw-in brass tip, Ø10 with 6 × Ø1.0 mm radial fuel holes. Swap tips to test: 12 × Ø0.7, slotted, and 6 × Ø0.8 for phase one.": "Ponta de latão rosqueável, Ø10 com 6 furos radiais de combustível de Ø1,0 mm. Pontas intercambiáveis para teste: 12 × Ø0,7, com fendas, e 6 × Ø0,8 para a fase um.",
+"Ethanol inlet": "Entrada de etanol",
+"3/8 in copper line on the engine axis, feeding the bore through the pintle.": "Linha de cobre de 3/8 in no eixo do motor, alimentando o furo central através do pintle.",
+"Graphite liner": "Liner de grafite",
+"One piece: Ø40 chamber, Ø16.0 throat, Ø27.2 exit, Ø60 outside, about 230 mm long. Slides out after each firing so the throat can be measured.": "Peça única: câmara Ø40, garganta Ø16,0, saída Ø27,2, Ø60 externo, cerca de 230 mm de comprimento. Sai deslizando após cada queima para que a garganta seja medida.",
+"Ceramic paper": "Papel cerâmico",
+"3 mm ceramic-fibre paper between liner and sleeve. Slows heat into the aluminium, centres the liner and takes up thermal growth.": "Papel de fibra cerâmica de 3 mm entre o liner e a camisa. Retarda o calor para o alumínio, centraliza o liner e absorve a dilatação térmica.",
+"6063 sleeve": "Camisa de 6063",
+"Ø76.2 × 5 mm aluminium tube, no welds. The only pressure boundary around the chamber: 10 MPa hoop stress at 15 bar.": "Tubo de alumínio Ø76,2 × 5 mm, sem soldas. A única fronteira de pressão em torno da câmara: tensão circunferencial de 10 MPa a 15 bar.",
+"Graphite gaskets": "Juntas de grafite",
+"Flexible graphite sheet at each end of the liner. Seals the ends and absorbs the liner's axial growth.": "Folha de grafite flexível em cada ponta do liner. Veda as extremidades e absorve a dilatação axial do liner.",
+"Retainer plate": "Placa de retenção",
+"Steel, 12 mm, Ø110. Holds the liner against the head through the gasket; the nozzle exit shows through its centre.": "Aço, 12 mm, Ø110. Prende o liner contra o cabeçote através da junta; a saída do bocal aparece pelo centro.",
+"Tie rods": "Tirantes",
+"4 × M8 A2-70 on a Ø90 circle. Disc springs and nut at the head, all-metal lock nut at the plate; paint stripes show any movement.": "4 × M8 A2-70 em um círculo de Ø90. Molas prato e porca no cabeçote, porca autotravante toda metálica na placa; listras de tinta denunciam qualquer movimento.",
+"Torch igniter": "Ignitor tocha",
+"Brass body with a motorcycle spark plug. Propane and oxygen light at the spark; the flame enters through a Ø6 port 15 mm from the injector face.": "Corpo de latão com vela de ignição de moto. Propano e oxigênio acendem na faísca; a chama entra por um furo de Ø6 a 15 mm da face do injetor.",
+"Chamber-pressure port": "Tomada de pressão de câmara",
+"1/8 in stainless standoff coil to PT-5, so the transducer never sees hot gas.": "Serpentina de afastamento de inox de 1/8 in até o PT-5, para que o transdutor nunca receba gás quente.",
+"Why it is built this way": "Por que ele é construído assim",
+"Every material here is something the team can buy and machine today: 6063 aluminium, brass, stainless, graphite and copper refrigeration tube. Each choice below follows from that.": "Todo material aqui é algo que a equipe consegue comprar e usinar hoje: alumínio 6063, latão, inox, grafite e tubo de cobre de refrigeração. Cada escolha abaixo decorre disso.",
+"Chamber pressure is set by the regulator": "A pressão de câmara é definida pelo regulador",
+"At 15 bar the 6063 sleeve sees about 10 MPa of hoop stress, under a tenth of its yield. The real limit is the oxygen regulator: the venturi needs about 25% more pressure upstream than the injector, and the valves take 2 to 3 bar more. Phase one runs a 15 bar regulator at 9.5 bar chamber pressure; phase two adds a 24 bar regulator for the full 15 bar.": "A 15 bar, a camisa de 6063 sofre cerca de 10 MPa de tensão circunferencial, menos de um décimo do seu limite de escoamento. O limite real é o regulador de oxigênio: o venturi precisa de cerca de 25% a mais de pressão a montante do que o injetor, e as válvulas consomem mais 2 a 3 bar. A fase um usa um regulador de 15 bar com 9,5 bar de pressão de câmara; a fase dois adiciona um regulador de 24 bar para chegar aos 15 bar completos.",
+"10 MPa": "10 MPa",
+"sleeve hoop stress at 15 bar, against 110 MPa yield": "tensão circunferencial na camisa a 15 bar, contra 110 MPa de escoamento",
+"A graphite liner takes the flame": "Um liner de grafite recebe a chama",
+"The gas is near 2,900 K. Aluminium melts at 660 °C and burns in oxygen, so a bare 6063 chamber would fail in the first second. One piece of graphite forms the chamber, throat and nozzle, and it slides out for inspection after every firing.": "O gás fica perto de 2.900 K. O alumínio funde a 660 °C e queima em oxigênio, então uma câmara de 6063 sem proteção falharia no primeiro segundo. Uma única peça de grafite forma câmara, garganta e bocal, e sai deslizando para inspeção após cada queima.",
+"Ø16.0 mm": "Ø16,0 mm",
+"throat, checked after each firing for erosion": "garganta, verificada após cada queima quanto à erosão",
+"Ceramic paper keeps the sleeve cool": "O papel cerâmico mantém a camisa fria",
+"Graphite heats through in about 2 s. Three millimetres of ceramic paper slows the heat into the sleeve, centres the brittle liner and absorbs the difference in expansion: aluminium grows about six times more per degree than graphite.": "O grafite aquece por completo em cerca de 2 s. Três milímetros de papel cerâmico retardam o calor para a camisa, centralizam o liner frágil e absorvem a diferença de dilatação: o alumínio dilata cerca de seis vezes mais por grau que o grafite.",
+"~20 kW/m²": "~20 kW/m²",
+"heat into the sleeve through the paper": "fluxo de calor para a camisa através do papel",
+"Try it without the paper": "Teste sem o papel",
+"The sonic venturi is the flowmeter": "O venturi sônico é o medidor de vazão",
+"While the gas in its throat is at the speed of sound, oxygen flow depends only on the inlet pressure and temperature. One transducer and one thermocouple make it a flowmeter, and the choked throat stops chamber pressure swings from travelling back up the line.": "Enquanto o gás na garganta está na velocidade do som, a vazão de oxigênio depende apenas da pressão e da temperatura de entrada. Um transdutor e um termopar o transformam em medidor de vazão, e a garganta blocada impede que oscilações da pressão de câmara subam pela linha.",
+"Ø5.4 mm": "Ø5,4 mm",
+"venturi throat, choked below 85% of inlet pressure": "garganta do venturi, blocada abaixo de 85% da pressão de entrada",
+"Two throttle actuators, on purpose": "Dois atuadores de estrangulamento, de propósito",
+"Oxygen is throttled by a 1/2 in ball valve on a 150 kg·cm servo, because no small needle valve passes 290 Nm³/h. Ethanol is throttled by a needle valve on a NEMA 17 stepper, which gives fine steps on the liquid side. Flying one of each shows which actuator the lander should use.": "O oxigênio é estrangulado por uma válvula esfera de 1/2 in com servo de 150 kg·cm, porque nenhuma válvula agulha pequena passa 290 Nm³/h. O etanol é estrangulado por uma válvula agulha com motor de passo NEMA 17, que dá passos finos do lado líquido. Testar um de cada mostra qual atuador o lander deve usar.",
+"3–6 N·m": "3–6 N·m",
+"ball-valve breakaway torque at 24 bar": "torque de arranque da válvula esfera a 24 bar",
+"Tie rods with disc springs": "Tirantes com molas prato",
+"Four M8 A2-70 rods clamp the head, sleeve and retainer plate. Heat cycles loosen nuts more than vibration does, so disc springs keep the clamp load steady as parts grow, all-metal lock nuts sit at the hot end, and paint stripes show any movement.": "Quatro tirantes M8 A2-70 prendem o cabeçote, a camisa e a placa de retenção. Ciclos térmicos afrouxam porcas mais do que a vibração, então molas prato mantêm a força de aperto constante enquanto as peças dilatam, porcas autotravantes metálicas ficam no lado quente e listras de tinta denunciam qualquer movimento.",
+"rod safety factor at the 30 bar worst case": "fator de segurança dos tirantes no pior caso de 30 bar",
+"It fails safe without software": "Falha segura sem software",
+"Cutting power is always the safe move. The E-stop loop drops solenoid power through a relay: main valves close and nitrogen purges open, with no code involved. High-pressure oxygen is only ever opened by hand.": "Cortar a energia é sempre a ação segura. O circuito de emergência corta a alimentação das solenoides por um relé: as válvulas principais fecham e as purgas de nitrogênio abrem, sem nenhum código envolvido. O oxigênio de alta pressão só é aberto manualmente.",
+"Device": "Dispositivo",
+"With power lost": "Sem energia",
+"Why": "Por quê",
+"SV-1, SV-2 main valves": "SV-1, SV-2 válvulas principais",
+"Close": "Fecha",
+"Normally-closed solenoids stop both propellants": "Solenoides normalmente fechadas bloqueiam os dois propelentes",
+"SV-3, SV-4 igniter": "SV-3, SV-4 ignitor",
+"No torch gas without a command": "Sem gás na tocha sem comando",
+"PV-1, PV-2 purges": "PV-1, PV-2 purgas",
+"Open": "Abre",
+"Normally-open solenoids flush both manifolds with nitrogen": "Solenoides normalmente abertas lavam os dois manifolds com nitrogênio",
+"RV-1, RV-2 reliefs": "RV-1, RV-2 alívios",
+"Open at 30 bar": "Abre a 30 bar",
+"Spring-loaded, no power needed": "Acionadas por mola, sem precisar de energia",
+"CV-1 to CV-4": "CV-1 a CV-4",
+"Block backflow": "Bloqueiam refluxo",
+"Fuel cannot reach the oxygen side, or the reverse": "O combustível não chega ao lado do oxigênio, nem o contrário",
+"Automatic abort when": "Aborto automático quando",
+"Check": "Verificação",
+"No torch flame 0.3 s after the spark": "Sem chama na tocha 0,3 s após a faísca",
+"Chamber below a third of full pressure 0.3 s after fuel opens": "Câmara abaixo de um terço da pressão nominal 0,3 s após a abertura do combustível",
+"Chamber pressure off its setpoint by more than 20%": "Pressão de câmara fora do setpoint em mais de 20%",
+"Sleeve above 120 °C": "Camisa acima de 120 °C",
+"Venturi no longer choked": "Venturi não está mais blocado",
+"Fuel tank pressure dropping toward the chamber": "Pressão do tanque de combustível caindo em direção à da câmara",
+"Telemetry link lost for 200 ms, or E-stop": "Perda do link de telemetria por 200 ms, ou emergência",
+"Twelve gates before the showcase firing": "Doze etapas antes da queima de demonstração",
+"Each step has a written procedure and a go/no-go, and the next starts only after the one before it passed. Nitrogen stands in for oxygen in every cold flow. Hot steps need the mentor present.": "Cada etapa tem um procedimento escrito e um go/no-go, e a próxima só começa depois que a anterior foi aprovada. O nitrogênio substitui o oxigênio em todo escoamento a frio. Etapas a quente exigem a presença do orientador.",
+"Clean and leak-check": "Limpeza e teste de estanqueidade",
+"Oxygen-clean the GOX side, leak-check everything with nitrogen at 25 bar": "Limpeza para oxigênio do lado de GOX, teste de estanqueidade de tudo com nitrogênio a 25 bar",
+"Hydrostatic proof": "Teste hidrostático",
+"Fuel tank and engine with the throat plugged, water at 45 bar": "Tanque de combustível e motor com a garganta tampada, água a 45 bar",
+"Electronics bench test": "Teste de bancada da eletrônica",
+"Every abort path, E-stop, power loss and link loss, with no gas": "Todos os caminhos de aborto, emergência, perda de energia e perda de link, sem gás",
+"Fuel cold flow": "Escoamento a frio de combustível",
+"Water through the injector: flow against pressure drop, spray on camera": "Água pelo injetor: vazão versus perda de carga, spray filmado",
+"Oxygen-side cold flow": "Escoamento a frio do lado do oxigênio",
+"Nitrogen through the venturi and annulus, then both sides together": "Nitrogênio pelo venturi e pelo anel, depois os dois lados juntos",
+"Throttle mapping": "Mapeamento do estrangulamento",
+"Map both throttle valves and tune the control loops on cold flows": "Mapear as duas válvulas de estrangulamento e ajustar as malhas de controle em escoamentos a frio",
+"Igniter alone": "Só o ignitor",
+"At least 20 lights, timing command to flame": "Pelo menos 20 acendimentos, tempo do comando até a chama",
+"Ignition pops": "Ignições curtas",
+"0.5 s, then 1 s at 60% flow": "0,5 s, depois 1 s com 60% da vazão",
+"Short firings": "Queimas curtas",
+"3 s and 5 s at full flow, throat measured after each": "3 s e 5 s com vazão plena, garganta medida após cada uma",
+"Steady 10 s firings": "Queimas estáveis de 10 s",
+"c* efficiency from chamber pressure and measured flows": "Eficiência de c* a partir da pressão de câmara e das vazões medidas",
+"Throttle steps": "Degraus de estrangulamento",
+"100% to 60% and back, open-loop, then closed-loop on chamber pressure": "De 100% a 60% e de volta, em malha aberta, depois em malha fechada na pressão de câmara",
+"Showcase firing": "Queima de demonstração",
+"Filmed for sponsors and the milestone report": "Filmada para patrocinadores e para o relatório de marco",
+"Same chamber pressure, half the thrust": "Mesma pressão de câmara, metade do empuxo",
+"The stand, sequencer, control loops, pintle fuel side, liner construction and procedures carry over unchanged. The lander engine swaps gaseous oxygen for liquid N2O and doubles the flow.": "A bancada, o sequenciador, as malhas de controle, o lado do combustível do pintle, a construção do liner e os procedimentos são reaproveitados sem mudanças. O motor do lander troca o oxigênio gasoso por N2O líquido e dobra a vazão.",
+"Proof of concept": "Prova de conceito",
+"Lander engine": "Motor do lander",
+"Propellants": "Propelentes",
+"GOX and ethanol": "GOX e etanol",
+"Liquid N2O and ethanol": "N2O líquido e etanol",
+"Mixture ratio": "Razão de mistura",
+"Total flow": "Vazão total",
+"Throat, chamber": "Garganta, câmara",
+"Ø16, Ø40 mm": "Ø16, Ø40 mm",
+"Ø25, Ø56 mm": "Ø25, Ø56 mm",
+"Burn": "Queima",
+"Throttle": "Estrangulamento",
+"To 60%, 40% stretch": "Até 60%, 40% como meta extra",
+"To 40%, held within ±5%": "Até 40%, mantido dentro de ±5%",
+"Oxidizer feed": "Alimentação do oxidante",
+"Regulated gas": "Gás regulado",
+"Self-pressurized liquid, 50–63 bar": "Líquido autopressurizado, 50–63 bar",
+"Phase-one budget": "Orçamento da fase um",
+"About R$13,100 in total, R$11,600 with borrowed safety gear. Estimates for late 2026, not quotes.": "Cerca de R$ 13.100 no total, R$ 11.600 com equipamento de segurança emprestado. Estimativas para o fim de 2026, não cotações.",
+"Gases and regulators": "Gases e reguladores",
+"Valves and actuators": "Válvulas e atuadores",
+"Stand and safety": "Bancada e segurança",
+"Instruments and control": "Instrumentação e controle",
+"Engine and fuel tank": "Motor e tanque de combustível",
+"Lines and fittings": "Linhas e conexões",
+"Pintle Engine PoC · ground test article for the LASC Lander Challenge, Planetary Lander category.": "Pintle Engine PoC · protótipo de teste em solo para o LASC Lander Challenge, categoria Planetary Lander.",
+"Numbers are first-pass hand calculations, to be confirmed in CEA, Ansys and SolidWorks before any metal is cut. The simulator is a teaching model, not a substitute for the test data.": "Os números são cálculos manuais preliminares, a serem confirmados no CEA, Ansys e SolidWorks antes de cortar qualquer metal. O simulador é um modelo didático, não substitui os dados de teste.",
+"Sections": "Seções",
+"Language": "Idioma",
+"Regulator phase": "Fase do regulador",
+"Fluid schematic of the proof-of-concept engine with live flow": "Esquema de fluidos do motor de prova de conceito com escoamento ao vivo",
+"Fuel tank, Ethanol tank": "Tanque de combustível, Tanque de etanol",
+"REG-1, Nitrogen regulator": "REG-1, Regulador de nitrogênio",
+"REG-2, Oxygen regulator": "REG-2, Regulador de oxigênio",
+"PT-6, Nitrogen pressure": "PT-6, Pressão de nitrogênio",
+"PV-1, Fuel-side purge": "PV-1, Purga do lado do combustível",
+"CV-3, Purge check valve": "CV-3, Válvula de retenção da purga",
+"PV-2, Oxygen-side purge": "PV-2, Purga do lado do oxigênio",
+"CV-4, Purge check valve": "CV-4, Válvula de retenção da purga",
+"RV-1, Fuel tank relief": "RV-1, Alívio do tanque de combustível",
+"VV-1, Tank vent": "VV-1, Respiro do tanque",
+"PT-3, Tank pressure": "PT-3, Pressão do tanque",
+"TC-7, Ethanol temperature": "TC-7, Temperatura do etanol",
+"SV-1, Main fuel valve": "SV-1, Válvula principal de combustível",
+"TV-1, Fuel throttle": "TV-1, Estrangulamento do combustível",
+"CV-1, Fuel check valve": "CV-1, Válvula de retenção de combustível",
+"PT-4, Fuel manifold pressure": "PT-4, Pressão do manifold de combustível",
+"RV-2, Oxygen line relief": "RV-2, Alívio da linha de oxigênio",
+"F-1, Oxygen filter": "F-1, Filtro de oxigênio",
+"SV-2, Main oxygen valve": "SV-2, Válvula principal de oxigênio",
+"TV-2, Oxygen throttle": "TV-2, Estrangulamento do oxigênio",
+"PT-1, Venturi inlet pressure": "PT-1, Pressão de entrada do venturi",
+"TT-1, Venturi inlet temperature": "TT-1, Temperatura de entrada do venturi",
+"V-1, Oxygen flowmeter": "V-1, Medidor de vazão de oxigênio",
+"PT-2, Oxygen manifold pressure": "PT-2, Pressão do manifold de oxigênio",
+"CV-2, Oxygen check valve": "CV-2, Válvula de retenção de oxigênio",
+"TC-6, Regulator body": "TC-6, Corpo do regulador",
+"NV-1, Torch oxygen trim": "NV-1, Ajuste de oxigênio da tocha",
+"SV-3, Torch oxygen": "SV-3, Oxigênio da tocha",
+"SV-4, Torch propane": "SV-4, Propano da tocha",
+"Engine, Pintle engine": "Motor, Motor com pintle",
+"IG-1, Torch igniter": "IG-1, Ignitor tocha",
+"PT-5, Chamber pressure": "PT-5, Pressão de câmara",
+"TC-1, Sleeve temperature": "TC-1, Temperatura da camisa",
+"LC-1, Thrust": "LC-1, Empuxo",
+"Chamber pressure, thrust and sleeve temperature over the last 30 seconds": "Pressão de câmara, empuxo e temperatura da camisa nos últimos 30 segundos",
+"Vessel": "Vaso de pressão",
+"Ethanol tank": "Tanque de etanol",
+"6063 tube Ø63.5 × 4 mm, 1.5 L, pressurized to 24 bar by nitrogen. Maximum operating pressure 30 bar, proof-tested with water at 45 bar. Hoop stress at 30 bar is 21 MPa against 110 MPa yield.": "Tubo de 6063 Ø63,5 × 4 mm, 1,5 L, pressurizado a 24 bar com nitrogênio. Pressão máxima de operação de 30 bar, testado hidrostaticamente com água a 45 bar. A tensão circunferencial a 30 bar é de 21 MPa, contra 110 MPa de escoamento.",
+"Regulator": "Regulador",
+"Nitrogen regulator": "Regulador de nitrogênio",
+"Air-conditioning type, set to 24 bar. Pushes the ethanol out of the tank and feeds both purge lines.": "Do tipo usado em ar-condicionado, ajustado em 24 bar. Empurra o etanol para fora do tanque e alimenta as duas linhas de purga.",
+"Oxygen regulator": "Regulador de oxigênio",
+"Drops cylinder pressure (up to 200 bar) to about 15 bar in phase one and 24 bar in phase two. Opened by hand only: remote valves sit on the regulated side.": "Reduz a pressão do cilindro (até 200 bar) para cerca de 15 bar na fase um e 24 bar na fase dois. Aberto só manualmente: as válvulas remotas ficam no lado regulado.",
+"Instrument": "Instrumento",
+"Nitrogen pressure": "Pressão de nitrogênio",
+"Confirms purge gas is available before arming.": "Confirma que há gás de purga disponível antes de armar.",
+"Solenoid valve, normally open": "Válvula solenoide, normalmente aberta",
+"Fuel-side purge": "Purga do lado do combustível",
+"Opens when power drops and flushes the fuel manifold with nitrogen after every firing or abort.": "Abre quando a energia cai e lava o manifold de combustível com nitrogênio após cada queima ou aborto.",
+"Check valve": "Válvula de retenção",
+"Purge check valve": "Válvula de retenção da purga",
+"Keeps ethanol out of the nitrogen purge line.": "Impede que o etanol entre na linha de purga de nitrogênio.",
+"Oxygen-side purge": "Purga do lado do oxigênio",
+"Opens when power drops and flushes the oxygen manifold with nitrogen.": "Abre quando a energia cai e lava o manifold de oxigênio com nitrogênio.",
+"Keeps oxygen out of the nitrogen purge line.": "Impede que o oxigênio entre na linha de purga de nitrogênio.",
+"Relief valve": "Válvula de alívio",
+"Fuel tank relief": "Alívio do tanque de combustível",
+"Spring-loaded, lifts at 30 bar and reseats near 28 bar. No power or software involved. Turn on the regulator fault to see it lift.": "Acionada por mola, abre a 30 bar e fecha de novo perto de 28 bar. Sem energia nem software envolvidos. Ative a falha do regulador para vê-la abrir.",
+"Servo ball valve": "Válvula esfera com servo",
+"Tank vent": "Respiro do tanque",
+"Open when safe, closed to pressurize the tank on arming, reopened after shutdown.": "Aberta em seguro, fechada para pressurizar o tanque ao armar, reaberta após o desligamento.",
+"Tank pressure": "Pressão do tanque",
+"Pressurization check and relief monitoring. Aborts if tank pressure falls toward chamber pressure.": "Verificação da pressurização e monitoramento do alívio. Aborta se a pressão do tanque cair em direção à pressão de câmara.",
+"Thermocouple": "Termopar",
+"Ethanol temperature": "Temperatura do etanol",
+"Gives the fuel density for the mass-flow calculation.": "Fornece a densidade do combustível para o cálculo da vazão mássica.",
+"Solenoid valve, normally closed": "Válvula solenoide, normalmente fechada",
+"Main fuel valve": "Válvula principal de combustível",
+"3/8 in, brass with FKM seat. Fails closed when power drops.": "3/8 in, latão com sede de FKM. Falha fechada quando a energia cai.",
+"Stepper-driven needle valve": "Válvula agulha com motor de passo",
+"Fuel throttle": "Estrangulamento do combustível",
+"3/8 in needle valve on a NEMA 17 stepper with a 5:1 gearbox and TMC2209 driver. The inner loop holds the fuel pressure drop that gives O/F 1.3.": "Válvula agulha de 3/8 in com motor de passo NEMA 17, redução 5:1 e driver TMC2209. A malha interna mantém a perda de carga do combustível que dá O/F 1,3.",
+"Fuel check valve": "Válvula de retenção de combustível",
+"Lets ethanol flow to the engine only. Stops chamber gas pushing back into the fuel line.": "Deixa o etanol fluir apenas em direção ao motor. Impede que o gás da câmara volte para a linha de combustível.",
+"Fuel manifold pressure": "Pressão do manifold de combustível",
+"With PT-5 it gives the pressure drop across the injector, which the bench calibration turns into fuel flow.": "Junto com o PT-5, dá a perda de carga no injetor, que a calibração em bancada converte em vazão de combustível.",
+"Oxygen line relief": "Alívio da linha de oxigênio",
+"Lifts at 30 bar if the oxygen regulator fails open, protecting every part downstream.": "Abre a 30 bar se o regulador de oxigênio falhar aberto, protegendo todas as peças a jusante.",
+"Filter": "Filtro",
+"Oxygen filter": "Filtro de oxigênio",
+"Sintered bronze, 1/2 in, right after the regulator. Particles hitting valve seats in oxygen are an ignition source.": "Bronze sinterizado, 1/2 in, logo após o regulador. Partículas batendo em sedes de válvula com oxigênio são fonte de ignição.",
+"Main oxygen valve": "Válvula principal de oxigênio",
+"1/2 in, oxygen-service, PTFE seat. Opens 0.2 s before fuel so the chamber never fills with unburned ethanol.": "1/2 in, para serviço com oxigênio, sede de PTFE. Abre 0,2 s antes do combustível para que a câmara nunca se encha de etanol não queimado.",
+"Oxygen throttle": "Estrangulamento do oxigênio",
+"1/2 in brass ball valve on a 150 kg·cm servo. Sets the venturi inlet pressure, and with it the oxygen flow.": "Válvula esfera de latão de 1/2 in com servo de 150 kg·cm. Define a pressão de entrada do venturi e, com ela, a vazão de oxigênio.",
+"Venturi inlet pressure": "Pressão de entrada do venturi",
+"Oxygen flow is directly proportional to this pressure while the venturi is choked.": "A vazão de oxigênio é diretamente proporcional a essa pressão enquanto o venturi está blocado.",
+"Venturi inlet temperature": "Temperatura de entrada do venturi",
+"Corrects the flow for gas cooled by the regulator, up to 8% at −20 °C.": "Corrige a vazão para o gás resfriado pelo regulador, até 8% a −20 °C.",
+"Sonic venturi": "Venturi sônico",
+"Oxygen flowmeter": "Medidor de vazão de oxigênio",
+"Ø5.4 mm throat. Choked flow depends only on inlet pressure and temperature, and stops chamber pressure swings travelling upstream.": "Garganta de Ø5,4 mm. A vazão blocada depende apenas da pressão e da temperatura de entrada, e impede que oscilações da pressão de câmara se propaguem a montante.",
+"Oxygen manifold pressure": "Pressão do manifold de oxigênio",
+"Confirms the venturi is still choked: manifold below 85% of the inlet.": "Confirma que o venturi continua blocado: manifold abaixo de 85% da entrada.",
+"Oxygen check valve": "Válvula de retenção de oxigênio",
+"Stops fuel or hot gas reaching the oxygen line.": "Impede que combustível ou gás quente cheguem à linha de oxigênio.",
+"Regulator body": "Corpo do regulador",
+"Watches regulator cooling and droop as the cylinder empties.": "Monitora o resfriamento e a queda de pressão do regulador à medida que o cilindro esvazia.",
+"Hand needle valve": "Válvula agulha manual",
+"Torch oxygen trim": "Ajuste de oxigênio da tocha",
+"Set once on the bench to give the torch a stable flame.": "Ajustada uma vez na bancada para dar à tocha uma chama estável.",
+"Torch oxygen": "Oxigênio da tocha",
+"Opens with the spark for the first second of the sequence.": "Abre junto com a faísca no primeiro segundo da sequência.",
+"Torch propane": "Propano da tocha",
+"From a camping-gas cartridge.": "De um cartucho de gás de camping.",
+"Thrust chamber": "Câmara de empuxo",
+"Pintle engine": "Motor com pintle",
+"Brass head, graphite liner Ø40 chamber and Ø16 throat, 6063 sleeve, steel retainer plate, four M8 tie rods. 400 N at 15 bar in phase two.": "Cabeçote de latão, liner de grafite com câmara de Ø40 e garganta de Ø16, camisa de 6063, placa de retenção de aço, quatro tirantes M8. 400 N a 15 bar na fase dois.",
+"Spark plug, propane and a little oxygen. The flame enters the chamber 15 mm from the injector face.": "Vela de ignição, propano e um pouco de oxigênio. A chama entra na câmara a 15 mm da face do injetor.",
+"Through a stainless standoff coil. Confirms ignition, closes the thrust loop and drives most aborts.": "Por uma serpentina de afastamento de inox. Confirma a ignição, fecha a malha de empuxo e comanda a maioria dos abortos.",
+"Sleeve temperature": "Temperatura da camisa",
+"On the sleeve outside the throat. Aborts the burn at 120 °C.": "Na camisa, por fora da garganta. Aborta a queima a 120 °C.",
+"Load cell": "Célula de carga",
+"S-type, 100 kg. Measures thrust for the c* and Isp check.": "Tipo S, 100 kg. Mede o empuxo para a verificação de c* e Isp.",
+"Illustration, not to scale": "Ilustração, fora de escala",
+"Now open. Click the valve again to close it by hand.": "Agora aberta. Clique na válvula de novo para fechá-la manualmente.",
+"{0} closed by hand": "{0} fechada manualmente",
+"Closed by hand. Click the valve again to open it.": "Fechada manualmente. Clique na válvula de novo para abri-la.",
+"Now closed. Click the valve again to open it by hand.": "Agora fechada. Clique na válvula de novo para abri-la manualmente.",
+"{0} opened by hand": "{0} aberta manualmente",
+"Opened by hand. Click the valve again to close it.": "Aberta manualmente. Clique na válvula de novo para fechá-la.",
+"Armed": "Armado",
+"Armed: purges closed, vent closed, tank pressurizing": "Armado: purgas fechadas, respiro fechado, tanque pressurizando",
+"Pressurizing": "Pressurizando",
+"Safed: purges open, tank venting": "Seguro: purgas abertas, tanque em alívio",
+"Phase two: 24 bar oxygen regulator": "Fase dois: regulador de oxigênio de 24 bar",
+"Phase one: 15 bar oxygen regulator": "Fase um: regulador de oxigênio de 15 bar",
+"E-stop: solenoid power cut by relay. Mains closed, purges open": "Emergência: alimentação das solenoides cortada pelo relé. Principais fechadas, purgas abertas",
+"Step {0} of {1}": "Etapa {0} de {1}",
+"Screw in the torch igniter and the chamber-pressure port, then connect the ethanol inlet": "Rosqueie o ignitor tocha e a tomada de pressão de câmara, depois conecte a entrada de etanol",
+"Drop the four tie rods through head and plate; disc springs and nuts on top, lock nuts below": "Passe os quatro tirantes pelo cabeçote e pela placa; molas prato e porcas em cima, porcas autotravantes embaixo",
+"Seat the head spigot in the top of the sleeve, and the retainer plate under the liner": "Encaixe o ressalto do cabeçote no topo da camisa e a placa de retenção sob o liner",
+"Screw the pintle tip into the injector head": "Rosqueie a ponta do pintle no cabeçote injetor",
+"Slide the wrapped liner up into the sleeve, with a graphite gasket at each end": "Deslize o liner envolvido para dentro da camisa, com uma junta de grafite em cada ponta",
+"Wrap the ceramic paper around the graphite liner": "Envolva o liner de grafite com o papel cerâmico",
+"Fully exploded. Press <b>Play assembly<\/b> to build it in order.": "Totalmente explodido. Pressione <b>Animar montagem<\/b> para montar na ordem.",
+"Firing": "Em queima",
+"Fire: spark on, torch oxygen and propane open": "Disparo: faísca ligada, oxigênio e propano da tocha abertos",
+"SV-2 open: oxygen lead, TV-2 at 60% preset": "SV-2 aberta: oxigênio na frente, TV-2 pré-ajustada em 60%",
+"SV-1 open: fuel": "SV-1 aberta: combustível",
+"choked": "blocado",
+"Ignition confirmed at {0} bar. Igniter off, ramping": "Ignição confirmada a {0} bar. Ignitor desligado, em rampa",
+"Burn complete: 10 s": "Queima concluída: 10 s",
+"Mains closed, purges open, tank venting": "Principais fechadas, purgas abertas, tanque em alívio",
+"Fault on: {0}": "Falha ativa: {0}",
+"RV-1 lifted at 30 bar: relief venting nitrogen": "RV-1 abriu a 30 bar: alívio liberando nitrogênio",
+"RV-1 reseated": "RV-1 fechou novamente",
+"no torch flame (TC-5)": "sem chama na tocha (TC-5)",
+"ABORT: {0}": "ABORTO: {0}",
+"Aborted": "Abortado",
+"chamber {0} bar, more than 20% off the {1} bar setpoint": "câmara a {0} bar, mais de 20% fora do setpoint de {1} bar",
+"sleeve at {0} °C (TC-1 limit 120 °C)": "camisa a {0} °C (limite do TC-1: 120 °C)",
+"Locked while the sequencer runs.": "Bloqueado enquanto o sequenciador está rodando.",
+"Photo": "Foto",
+"Safe commanded during burn": "Seguro comandado durante a queima",
+"UNCHOKED": "NÃO BLOCADO",
+"fuel tank pressure falling toward the chamber": "pressão do tanque de combustível caindo em direção à da câmara",
+"no ignition, chamber {0} bar below {1}": "sem ignição, câmara a {0} bar, abaixo de {1}",
+"venturi unchoked (PT-2 above 85% of PT-1)": "venturi não blocado (PT-2 acima de 85% do PT-1)"
+};
+</script>
+<script>
+/* ---------- language ---------- */
+window.I18N = (function () {
+  const PT = window.PT_BR;
+  const norm = (v) => v.replace(/\s+/g, ' ').trim();
+  let lang = 'en';
+  const nav = (navigator.language || '').toLowerCase();
+  try { const s = localStorage.getItem('pintle-lang'); lang = s || (nav.startsWith('pt') ? 'pt' : 'en'); } catch (e) { lang = nav.startsWith('pt') ? 'pt' : 'en'; }
+  if (location.hash === '#pt') lang = 'pt'; else if (location.hash === '#en') lang = 'en';
+  const t = (s, ...a) => {
+    let r = lang === 'pt' && PT[s] != null ? PT[s] : s;
+    a.forEach((v, i) => { r = r.split('{' + i + '}').join(v); });
+    return r;
+  };
+  const num = (n, dp, group) => Number(n).toLocaleString(lang === 'pt' ? 'pt-BR' : 'en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp, useGrouping: !!group });
+  function walk() {
+    const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => { const p = n.parentElement; if (!p || p.closest('script,style,[data-no-i18n]')) return NodeFilter.FILTER_REJECT; return n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP; },
+    });
+    let n;
+    while ((n = tw.nextNode())) {
+      const key = n.__en || norm(n.nodeValue);
+      if (PT[key] == null) continue;
+      n.__en = key;
+      const lead = n.nodeValue.match(/^\s*/)[0], tail = n.nodeValue.match(/\s*$/)[0];
+      n.nodeValue = lead + (lang === 'pt' ? PT[key] : key) + tail;
+    }
+    document.querySelectorAll('[aria-label]').forEach((e) => {
+      const key = e.__enLabel || e.getAttribute('aria-label');
+      if (PT[key] == null) return;
+      e.__enLabel = key; e.setAttribute('aria-label', lang === 'pt' ? PT[key] : key);
+    });
+  }
+  function apply() {
+    document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+    document.querySelectorAll('.lang button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.lang === lang));
+    walk();
+    document.dispatchEvent(new Event('langchange'));
+  }
+  function set(l) { lang = l; try { localStorage.setItem('pintle-lang', l); } catch (e) {} apply(); }
+  document.addEventListener('click', (e) => { const b = e.target.closest('.lang button'); if (b) set(b.dataset.lang); });
+  document.addEventListener('DOMContentLoaded', apply);
+  return { t, num, set, apply, get lang() { return lang; } };
+})();
+</script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script>
+/* ---------- Simulator ---------- */
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const t = (...a) => window.I18N.t(...a);
+  const fmt = (n, dp) => window.I18N.num(n, dp);
+
+  const PH = {
+    1: { Pv: 13.0, Pc: 9.4, F: 240, m: 128 },
+    2: { Pv: 20.7, Pc: 15.0, F: 400, m: 204 },
+  };
+  const MOX_REF = 0.1153, PV_REF = 20.7, HEAD = 1.15, CF = 0.0887 * 1.25 / 3, PC_K = 73.5;
+
+  const S = {
+    phase: 1, mode: 'safe', seqT: null, thr: 1, speed: 1, t: 0,
+    open: { SV1: false, SV2: false, SV3: false, SV4: false, PV1: true, PV2: true, VV1: true },
+    spark: false, Ptank: 1.5, Pc: 0, mox: 0, mf: 0, F: 0, Tg: 25, Ts: 25,
+    posOx: 0, posF: 0, uOx: 0, uF: 0, iOx: 0, iF: 0, burning: false, flame: false, flameT: 0,
+    PvMax: 0, rv: false, choked: true, pcErrT: 0, unchokeT: 0, ofErr: 0,
+    faults: { reg1: false, ign: false, droop: false, ins: false },
+    hist: [], fired: false, shutT: null,
+  };
+  S.PvMax = PH[1].Pv * HEAD;
+
+  /* ---------- schematic ---------- */
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = $('pid');
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); (parent || svg).appendChild(e); return e; };
+  const txt = (x, y, s, cls, anchor) => { const t = el('text', { x, y, class: cls || '', 'text-anchor': anchor || 'start' }); t.textContent = s; return t; };
+
+  const FL = { gox: '--gox', fuel: '--fuel', n2: '--n2', prop: '--prop' };
+  const lines = [
+    // key, path, fluid, big
+    ['n2a', 'M64 70 H100', 'n2'],
+    ['n2b', 'M122 70 H300 V150', 'n2'],
+    ['p1a', 'M160 70 V32 H640 V150', 'n2'],
+    ['p1b', 'M640 170 V248', 'n2'],
+    ['p1c', 'M640 266 V340', 'n2'],
+    ['p2', 'M185 70 V440 H430', 'n2'],
+    ['p2b', 'M450 440 H470', 'n2'],
+    ['p2c', 'M486 440 H590 V500', 'n2'],
+    ['vent', 'M340 215 H372', 'fuel'],
+    ['ventx', 'M392 215 H450', 'n2'],
+    ['rv', 'M340 175 H372', 'fuel'],
+    ['rvx', 'M392 175 H450', 'n2'],
+    ['fa', 'M300 310 V340 H380', 'fuel'],
+    ['fb', 'M400 340 H460', 'fuel'],
+    ['fc', 'M480 340 H600', 'fuel'],
+    ['fd', 'M616 340 H640', 'fuel'],
+    ['fe', 'M640 340 H790 V388', 'fuel'],
+    ['ga', 'M64 500 H100', 'gox', 1],
+    ['gb', 'M122 500 H160', 'gox', 1],
+    ['gc', 'M180 500 H250', 'gox', 1],
+    ['gd', 'M270 500 H320', 'gox', 1],
+    ['ge', 'M340 500 H460', 'gox', 1],
+    ['gf', 'M510 500 H600', 'gox', 1],
+    ['gg', 'M616 500 H700 V402 H762', 'gox', 1],
+    ['ta', 'M215 500 V585 H300', 'gox'],
+    ['tb', 'M320 585 H380', 'gox'],
+    ['tc', 'M400 585 H856 V440', 'gox'],
+    ['pa', 'M913 345 V380', 'prop'],
+    ['pb', 'M913 400 V430 H872', 'prop'],
+  ];
+  const flowEls = {};
+  const gLines = el('g', {});
+  for (const [k, d, f, big] of lines) {
+    el('path', { d, class: 'line' + (big ? ' big' : ''), stroke: `var(${FL[f]})` }, gLines);
+    flowEls[k] = el('path', { d, class: 'flow' + (big ? ' big' : '') }, gLines);
+  }
+  // vent arrows
+  for (const y of [175, 215]) el('path', { d: `M444 ${y - 5} L452 ${y} L444 ${y + 5}`, fill: 'none', stroke: 'var(--n2)', 'stroke-width': 1.6 });
+  el('path', { d: 'M140 452 V418 M135 424 L140 416 L145 424', fill: 'none', stroke: 'var(--n2)', 'stroke-width': 1.4 });
+
+  // vessels
+  const vessel = (x, y, w, h, fluid, a, b) => {
+    el('rect', { x, y, width: w, height: h, rx: Math.min(14, w / 3), class: 'tank', fill: `color-mix(in srgb, var(${fluid}) 14%, var(--panel))`, stroke: `var(${fluid})` });
+    txt(x + w / 2, y + h / 2 - 2, a, '', 'middle').setAttribute('font-weight', '600');
+    if (b) txt(x + w / 2, y + h / 2 + 13, b, 'q', 'middle');
+  };
+  vessel(8, 40, 56, 120, '--n2', 'N2', '200 bar');
+  vessel(8, 440, 56, 120, '--gox', 'O2', '200 bar');
+  vessel(900, 300, 26, 45, '--prop', '', '');
+  txt(913, 290, 'propane', 'q', 'middle');
+
+  const comps = {};
+  const mkComp = (id, info) => {
+    const g = el('g', { class: 'comp', id: 'c-' + id, tabindex: 0, role: 'button', 'aria-haspopup': 'dialog' });
+    const tip = el('title', {}, g);
+    comps[id] = { g, tip }; return g;
+  };
+  function labelComps() {
+    for (const id in comps) { const i = INFO(id); comps[id].tip.textContent = `${i.tag} · ${i.title}`; comps[id].g.setAttribute('aria-label', `${i.tag}, ${i.title}`); }
+  }
+
+  // fuel tank (clickable)
+  {
+    const g = mkComp('TANK', INFO('TANK'));
+    el('rect', { x: 256, y: 146, width: 88, height: 168, class: 'hit' }, g);
+    el('rect', { x: 260, y: 150, width: 80, height: 160, rx: 24, class: 'tank', fill: 'color-mix(in srgb, var(--fuel) 12%, var(--panel))', stroke: 'var(--fuel)' }, g);
+    S.tankLevel = el('rect', { x: 262, y: 230, width: 76, height: 78, rx: 20, fill: 'color-mix(in srgb, var(--fuel) 30%, var(--panel))' }, g);
+    const t1 = el('text', { x: 300, y: 205, 'text-anchor': 'middle', 'font-weight': 600 }, g); t1.textContent = 'Ethanol';
+    const t2 = el('text', { x: 300, y: 220, 'text-anchor': 'middle', class: 'q' }, g); t2.textContent = '1.5 L';
+    S.tankTxt = el('text', { x: 300, y: 250, 'text-anchor': 'middle', 'font-weight': 600 }, g);
+  }
+
+  function valve(id, x, y, kind, act, labelPos) {
+    const g = mkComp(id, INFO(id));
+    const vert = kind === 'v';
+    el('rect', vert ? { x: x - 14, y: y - 4, width: 44, height: 30, class: 'hit' } : { x: x - 4, y: y - 30, width: 30, height: 42, class: 'hit' }, g);
+    const pts = vert ? `${x - 8},${y} ${x + 8},${y + 20} ${x - 8},${y + 20} ${x + 8},${y}` : `${x},${y - 8} ${x + 20},${y + 8} ${x + 20},${y - 8} ${x},${y + 8}`;
+    el('polygon', { points: pts, class: 'vb' }, g);
+    const sx = vert ? x : x + 10, sy = vert ? y + 10 : y;
+    if (act !== 'hand') {
+      el('path', { d: vert ? `M${sx} ${sy} H${sx + 12}` : `M${sx} ${sy} V${sy - 12}`, stroke: 'var(--ink)', 'stroke-width': 1.2 }, g);
+      const ax = vert ? sx + 18 : sx, ay = vert ? sy : sy - 18;
+      if (act === 'sol') el('rect', { x: ax - 6, y: ay - 5, width: 12, height: 10, class: 'act' }, g);
+      if (act === 'servo') el('circle', { cx: ax, cy: ay, r: 6, class: 'act' }, g);
+      if (act === 'step') el('polygon', { points: `${ax},${ay - 7} ${ax + 7},${ay} ${ax},${ay + 7} ${ax - 7},${ay}`, class: 'act' }, g);
+      if (act === 'relief') el('path', { d: `M${sx - 4} ${sy - 12} L${sx + 4} ${sy - 15} L${sx - 4} ${sy - 18} L${sx + 4} ${sy - 21} L${sx - 4} ${sy - 24}`, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.2 }, g);
+    }
+    const [lx, ly, an] = labelPos;
+    const t = el('text', { x: lx, y: ly, 'text-anchor': an || 'middle' }, g); t.textContent = INFO(id).tag;
+    return g;
+  }
+  function check(id, x, y, vert, labelPos) {
+    const g = mkComp(id, INFO(id));
+    el('rect', vert ? { x: x - 10, y: y - 2, width: 20, height: 22, class: 'hit' } : { x: x - 2, y: y - 10, width: 22, height: 20, class: 'hit' }, g);
+    if (vert) { el('polygon', { points: `${x - 7},${y} ${x + 7},${y} ${x},${y + 14}`, class: 'vb' }, g); el('path', { d: `M${x - 7} ${y + 16} H${x + 7}`, stroke: 'var(--ink)', 'stroke-width': 1.5 }, g); }
+    else { el('polygon', { points: `${x},${y - 7} ${x},${y + 7} ${x + 14},${y}`, class: 'vb' }, g); el('path', { d: `M${x + 16} ${y - 7} V${y + 7}`, stroke: 'var(--ink)', 'stroke-width': 1.5 }, g); }
+    const t = el('text', { x: labelPos[0], y: labelPos[1], 'text-anchor': labelPos[2] || 'middle' }, g); t.textContent = INFO(id).tag;
+  }
+  function inst(id, x, y, tx, ty, label) {
+    const g = mkComp(id, INFO(id));
+    el('path', { d: `M${x} ${y} L${tx} ${ty}`, class: 'tap' }, g);
+    el('circle', { cx: x, cy: y, r: 15, class: 'bub' }, g);
+    const t = el('text', { x, y: y + 3.5, 'text-anchor': 'middle', 'font-size': 9.5 }, g); t.textContent = label || INFO(id).tag;
+  }
+  function boxComp(id, x, y, w, h, fill, label, lp) {
+    const g = mkComp(id, INFO(id));
+    el('rect', { x: x - 3, y: y - 3, width: w + 6, height: h + 6, class: 'hit' }, g);
+    el('rect', { x, y, width: w, height: h, rx: 3, fill, stroke: 'var(--ink)', 'stroke-width': 1.3 }, g);
+    if (label) { const t = el('text', { x: lp[0], y: lp[1], 'text-anchor': lp[2] || 'middle' }, g); t.textContent = label; }
+    return g;
+  }
+  function reg(id, x, y, color, lp) {
+    const g = mkComp(id, INFO(id));
+    el('rect', { x: x - 3, y: y - 14, width: 28, height: 28, class: 'hit' }, g);
+    el('rect', { x, y: y - 11, width: 22, height: 22, rx: 3, fill: 'var(--panel)', stroke: color, 'stroke-width': 1.5 }, g);
+    el('path', { d: `M${x + 4} ${y + 7}L${x + 18} ${y - 7}M${x + 12} ${y - 7}H${x + 18}V${y - 1}`, fill: 'none', stroke: color, 'stroke-width': 1.5 }, g);
+    const t = el('text', { x: lp[0], y: lp[1], 'text-anchor': lp[2] || 'middle' }, g); t.textContent = INFO(id).tag;
+  }
+
+  reg('REG1', 100, 70, 'var(--n2)', [111, 98]);
+  reg('REG2', 100, 500, 'var(--gox)', [104, 528, 'end']);
+  inst('PT6', 232, 108, 232, 70);
+  valve('PV1', 640, 150, 'v', 'sol', [662, 145, 'start']);
+  check('CV3', 640, 248, true, [654, 262, 'start']);
+  valve('PV2', 430, 440, 'h', 'sol', [440, 470]);
+  check('CV4', 470, 440, false, [478, 470]);
+  valve('RV1', 372, 175, 'h', 'relief', [458, 179, 'start']);
+  S.rvFlash = el('circle', { cx: 382, cy: 175, r: 16, class: 'relief-flash' });
+  valve('VV1', 372, 215, 'h', 'servo', [458, 219, 'start']);
+  inst('PT3', 222, 200, 260, 200);
+  inst('TC7', 222, 262, 260, 262);
+  valve('SV1', 380, 340, 'h', 'sol', [390, 368]);
+  valve('TV1', 460, 340, 'h', 'step', [470, 368]);
+  check('CV1', 600, 340, false, [608, 368]);
+  inst('PT4', 720, 302, 720, 340);
+  // GOX
+  valve('RV2', 130, 470, 'v', 'hand', [100, 458]);
+  // simplify RV-2 as relief symbol drawn manually
+  comps.RV2.g.querySelector('polygon').setAttribute('points', '132,488 148,488 140,472');
+  el('path', { d: 'M140 500 V488', stroke: 'var(--gox)', 'stroke-width': 3 }, comps.RV2.g);
+  el('path', { d: 'M134 470 L146 466 L134 462 L146 458', fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.2 }, comps.RV2.g);
+  {
+    const g = mkComp('F1', INFO('F1'));
+    el('rect', { x: 156, y: 488, width: 28, height: 24, class: 'hit' }, g);
+    el('polygon', { points: '160,500 170,490 180,500 170,510', class: 'vb', style: 'fill:var(--panel)' }, g);
+    el('path', { d: 'M170 490 V510', stroke: 'var(--ink)', 'stroke-width': 1, 'stroke-dasharray': '2 2' }, g);
+    const t = el('text', { x: 170, y: 528, 'text-anchor': 'middle' }, g); t.textContent = 'F-1';
+  }
+  valve('SV2', 250, 500, 'h', 'sol', [260, 528]);
+  valve('TV2', 320, 500, 'h', 'servo', [330, 528]);
+  inst('PT1', 392, 540, 392, 500);
+  inst('TT1', 428, 540, 428, 500);
+  {
+    const g = mkComp('V1', INFO('V1'));
+    el('rect', { x: 456, y: 486, width: 58, height: 28, class: 'hit' }, g);
+    el('polygon', { points: '460,490 484,497 510,490 510,510 484,503 460,510', fill: 'color-mix(in srgb, var(--gox) 18%, var(--panel))', stroke: 'var(--gox)', 'stroke-width': 1.5 }, g);
+    const t = el('text', { x: 485, y: 528, 'text-anchor': 'middle' }, g); t.textContent = 'V-1 venturi';
+    S.chokeTxt = el('text', { x: 485, y: 541, 'text-anchor': 'middle', class: 'q' }, g);
+  }
+  inst('PT2', 556, 462, 556, 500);
+  check('CV2', 600, 500, false, [608, 528]);
+  inst('TC6', 111, 560, 111, 511);
+  valve('NV1', 300, 585, 'h', 'hand', [310, 610]);
+  valve('SV3', 380, 585, 'h', 'sol', [390, 610]);
+  valve('SV4', 913, 380, 'v', 'sol', [890, 395, 'end']);
+
+  // engine
+  {
+    const g = mkComp('ENG', INFO('ENG'));
+    el('rect', { x: 740, y: 380, width: 100, height: 210, class: 'hit' }, g);
+    el('rect', { x: 762, y: 388, width: 56, height: 28, rx: 2, fill: 'color-mix(in srgb, var(--brass) 35%, var(--panel))', stroke: 'var(--ink)', 'stroke-width': 1.3 }, g);
+    el('rect', { x: 768, y: 416, width: 44, height: 118, fill: 'color-mix(in srgb, var(--ink) 14%, var(--panel))', stroke: 'var(--ink)', 'stroke-width': 1.3 }, g);
+    el('path', { d: 'M772 534 L784 548 L779 576 H801 L796 548 L808 534', fill: 'color-mix(in srgb, var(--ink) 14%, var(--panel))', stroke: 'var(--ink)', 'stroke-width': 1.3 }, g);
+    S.glow = el('rect', { x: 772, y: 420, width: 36, height: 110, fill: 'var(--hot)', opacity: 0 }, g);
+    S.plume = el('path', { d: 'M780 577 L768 640 L812 640 L800 577 Z', fill: 'var(--hot)', opacity: 0 }, g);
+    S.plumeCore = el('path', { d: 'M784 577 L780 625 L800 625 L796 577 Z', fill: 'var(--warn)', opacity: 0 }, g);
+    const t = el('text', { x: 744, y: 548, 'text-anchor': 'end', 'font-weight': 600 }, g); t.textContent = 'Engine';
+    S.engTxt = el('text', { x: 744, y: 562, 'text-anchor': 'end', class: 'q' }, g);
+  }
+  boxComp('IG1', 822, 422, 34, 16, 'color-mix(in srgb, var(--prop) 20%, var(--panel))', 'IG-1', [839, 414]);
+  el('path', { d: 'M822 430 H812', stroke: 'var(--prop)', 'stroke-width': 2 });
+  S.sparkEl = el('path', { d: 'M828 430 l4 -5 l2 5 l4 -5 l2 5', fill: 'none', stroke: 'var(--warn)', 'stroke-width': 1.5, opacity: 0 });
+  inst('PT5', 880, 500, 812, 500);
+  inst('TC1', 880, 540, 812, 520);
+  boxComp('LC1', 826, 360, 40, 16, 'var(--panel)', 'LC-1', [846, 352]);
+  el('path', { d: 'M826 368 L818 392', stroke: 'var(--n2)', 'stroke-dasharray': '3 2' });
+
+  txt(300, 24, 'nitrogen purge', 'q', 'middle');
+  txt(130, 56, 'REG-1', 'q', 'start').remove();
+  txt(520, 333, '3/8 in', 'q', 'middle');
+  txt(640, 492, '1/2 in', 'q', 'middle');
+  txt(620, 578, 'igniter oxygen', 'q', 'middle');
+
+  // clicking components
+  let selected = null;
+  for (const id in comps) {
+    const { g } = comps[id];
+    const act = () => clickComp(id);
+    g.addEventListener('click', act);
+    g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+  }
+  const TOGGLE = ['SV1', 'SV2', 'SV3', 'SV4', 'PV1', 'PV2', 'VV1'];
+  let popExtra = null;
+  function clickComp(id) {
+    const reopen = selected === id && !$('pop').hidden;
+    if (selected) comps[selected].g.classList.remove('sel');
+    selected = id; comps[id].g.classList.add('sel');
+    popExtra = null;
+    if (TOGGLE.includes(id)) {
+      if (S.mode === 'safe' || S.mode === 'armed') {
+        if (reopen) {
+          S.open[id] = !S.open[id];
+          if (id === 'SV3' || id === 'SV4') S.spark = S.open.SV3 && S.open.SV4;
+          log(t(S.open[id] ? '{0} opened by hand' : '{0} closed by hand', INFO(id).tag));
+          popExtra = S.open[id] ? 'Opened by hand. Click the valve again to close it.' : 'Closed by hand. Click the valve again to open it.';
+        } else popExtra = S.open[id] ? 'Now open. Click the valve again to close it by hand.' : 'Now closed. Click the valve again to open it by hand.';
+      } else popExtra = 'Locked while the sequencer runs.';
+    }
+    openPop(id);
+  }
+
+  /* ---------- component pop-up ---------- */
+  const ART = {
+    solenoid: '<rect class="br" x="38" y="72" width="84" height="30" rx="2"/><rect class="br" x="16" y="77" width="24" height="20" rx="1"/><rect class="br" x="120" y="77" width="24" height="20" rx="1"/><path class="nl" d="M23 77v20M33 77v20M127 77v20M137 77v20"/><rect class="st" x="70" y="56" width="20" height="16"/><rect class="dk" x="50" y="18" width="60" height="40" rx="4"/><rect class="st" x="74" y="10" width="12" height="8"/><rect class="gr" x="110" y="24" width="22" height="28" rx="2"/><rect class="dk" x="132" y="33" width="9" height="10"/><path class="nl" d="M141 38q12 0 12 16" style="stroke-width:2.4"/><path class="nl" d="M56 88h46M96 84l7 4-7 4"/>',
+    ballservo: '<rect class="dk" x="42" y="31" width="76" height="6" rx="1"/><rect class="dk" x="52" y="20" width="56" height="30" rx="2"/><rect class="gr ns" x="60" y="30" width="40" height="8"/><rect class="wh" x="58" y="12" width="34" height="7" rx="3.5"/><circle class="wh" cx="64" cy="15.5" r="5"/><rect class="st" x="46" y="54" width="68" height="6"/><rect class="st" x="46" y="54" width="6" height="24"/><rect class="st" x="108" y="54" width="6" height="24"/><rect class="st" x="76" y="60" width="8" height="14"/><rect class="br" x="22" y="80" width="24" height="22" rx="1"/><rect class="br" x="114" y="80" width="24" height="22" rx="1"/><ellipse class="br" cx="80" cy="91" rx="36" ry="18"/><path class="nl" d="M29 80v22M39 80v22M121 80v22M131 80v22"/>',
+    needlestep: '<rect class="dk" x="54" y="6" width="52" height="40" rx="3"/><rect class="gr ns" x="59" y="11" width="42" height="30"/><rect class="wh" x="106" y="18" width="8" height="12"/><rect class="st" x="52" y="46" width="56" height="5"/><rect class="st" x="58" y="51" width="4" height="37"/><rect class="st" x="98" y="51" width="4" height="37"/><rect class="st" x="72" y="54" width="16" height="14" rx="2"/><rect class="br" x="68" y="68" width="24" height="20"/><path class="nl" d="M74 68v20M86 68v20"/><rect class="br" x="32" y="92" width="20" height="16"/><rect class="br" x="108" y="92" width="20" height="16"/><rect class="br" x="50" y="88" width="60" height="24" rx="2"/>',
+    needle: '<rect class="dk" x="58" y="18" width="44" height="22" rx="5"/><path class="nl" d="M66 18v22M74 18v22M82 18v22M90 18v22"/><rect class="st" x="76" y="40" width="8" height="16"/><rect class="br" x="68" y="56" width="24" height="26"/><path class="nl" d="M74 56v26M86 56v26"/><rect class="br" x="30" y="88" width="22" height="18"/><rect class="br" x="108" y="88" width="22" height="18"/><rect class="br" x="50" y="82" width="60" height="28" rx="2"/>',
+    check: '<rect class="br" x="16" y="50" width="20" height="26" rx="1"/><rect class="br" x="124" y="50" width="20" height="26" rx="1"/><rect class="br" x="34" y="46" width="92" height="34" rx="4"/><path class="nl" d="M22 50v26M30 50v26M130 50v26M138 50v26M58 46v34M102 46v34"/><path class="nl" d="M64 63h30M88 57l8 6-8 6"/>',
+    relief: '<circle class="nl" cx="80" cy="11" r="7"/><rect class="st" x="72" y="17" width="16" height="10"/><rect class="br" x="63" y="27" width="34" height="36" rx="3"/><path class="nl" d="M67 35l26 5M67 43l26 5M67 51l26 5"/><rect class="br" x="98" y="70" width="28" height="16"/><path class="nl" d="M120 70v16"/><rect class="br" x="56" y="63" width="48" height="32" rx="3"/><rect class="br" x="68" y="95" width="24" height="18"/><path class="nl" d="M68 100h24M68 105h24M68 110h24"/>',
+    regulator: '<rect class="br" x="18" y="66" width="38" height="16" rx="1"/><path class="nl" d="M26 66v16M36 66v16"/><rect class="br" x="72" y="98" width="16" height="16"/><rect class="st" x="64" y="42" width="6" height="12"/><rect class="st" x="90" y="42" width="6" height="12"/><circle class="st" cx="80" cy="74" r="26"/><rect class="dk" x="104" y="66" width="28" height="16" rx="3"/><rect class="dk" x="130" y="54" width="9" height="40" rx="3"/><circle class="wh" cx="58" cy="28" r="17"/><circle class="wh" cx="102" cy="28" r="17"/><path class="nl" d="M47 37a14 14 0 0 1 22 0M91 37a14 14 0 0 1 22 0"/><path class="nl" d="M58 28l8-8M102 28l-5-11" style="stroke:var(--hot);stroke-width:1.6"/><circle class="dk" cx="58" cy="28" r="2"/><circle class="dk" cx="102" cy="28" r="2"/>',
+    transducer: '<path class="nl" d="M80 4q0 6 14 8" style="stroke-width:3"/><rect class="dk" x="72" y="10" width="16" height="14" rx="2"/><rect class="st" x="63" y="24" width="34" height="58" rx="4"/><rect class="wh" x="66" y="40" width="28" height="20"/><path class="nl" d="M70 46h20M70 52h14"/><rect class="st" x="57" y="82" width="46" height="14"/><path class="nl" d="M70 82v14M90 82v14"/><rect class="st" x="70" y="96" width="20" height="16"/><path class="nl" d="M70 100h20M70 104h20M70 108h20"/>',
+    thermo: '<rect class="st" x="6" y="66" width="74" height="6" rx="3"/><rect class="br" x="80" y="59" width="18" height="20"/><path class="nl" d="M86 59v20M92 59v20"/><rect class="br" x="98" y="62" width="12" height="14"/><rect class="st" x="110" y="64" width="14" height="10" rx="2"/><path class="nl" d="M124 69C146 69 146 40 126 34S100 22 114 16" style="stroke-width:3;stroke-dasharray:2 2"/><rect class="yl" x="102" y="2" width="26" height="14" rx="2"/><path class="nl" d="M108 2v-2M122 2v-2"/>',
+    filter: '<rect class="br" x="18" y="52" width="24" height="22" rx="1"/><rect class="br" x="118" y="52" width="24" height="22" rx="1"/><path class="nl" d="M25 52v22M35 52v22M125 52v22M135 52v22"/><rect class="br" x="40" y="42" width="80" height="42" rx="5"/><rect class="wh" x="54" y="51" width="52" height="24"/><path class="nl" d="M58 56h44M58 61h44M58 66h44M58 71h44" style="stroke-dasharray:1 3"/>',
+    venturi: '<rect class="st" x="14" y="38" width="132" height="48" rx="3"/><path class="wh" d="M14 50H40L80 58.5L146 51V73L80 65.5L40 74H14Z"/><path class="nl" d="M80 32v-8M80 92v8"/><text x="80" y="18" text-anchor="middle">Ø5.4</text><path class="nl" d="M22 62h12M30 58l5 4-5 4" style="stroke:var(--gox)"/>',
+    tank: '<rect class="br" x="40" y="24" width="10" height="14"/><rect class="br" x="110" y="24" width="10" height="14"/><rect class="br" x="76" y="82" width="10" height="16"/><rect class="al" x="20" y="38" width="120" height="44" rx="4"/><rect class="or ns" x="21" y="62" width="118" height="19" opacity=".75"/><rect class="nl" x="20" y="38" width="120" height="44" rx="4"/><rect class="st" x="11" y="33" width="12" height="54" rx="3"/><rect class="st" x="137" y="33" width="12" height="54" rx="3"/>',
+    engine: '<rect class="or" x="6" y="57" width="16" height="9"/><rect class="bl" x="33" y="22" width="9" height="16"/><rect class="br" x="22" y="36" width="34" height="52" rx="2"/><rect class="al" x="56" y="44" width="70" height="36"/><path class="nl" d="M26 40H134M26 84H134" style="stroke-width:2.2"/><rect class="dk" x="126" y="36" width="7" height="52"/><path class="gr" d="M133 55L150 48V76L133 69Z"/><rect class="pp" x="64" y="30" width="14" height="14"/>',
+    torch: '<rect class="st" x="70" y="4" width="8" height="10"/><rect class="wh" x="65" y="14" width="18" height="26" rx="3"/><rect class="st" x="61" y="40" width="26" height="12"/><path class="nl" d="M69 40v12M79 40v12"/><rect class="bl" x="18" y="58" width="28" height="8"/><rect class="pp" x="18" y="76" width="28" height="8"/><rect class="br" x="102" y="66" width="38" height="10"/><rect class="br" x="46" y="52" width="56" height="40" rx="3"/>',
+    loadcell: '<rect class="dk" x="73" y="4" width="14" height="10"/><rect class="dk" x="73" y="106" width="14" height="10"/><rect class="st" x="44" y="14" width="72" height="92" rx="3"/><rect class="wh" x="44" y="38" width="52" height="11"/><rect class="wh" x="64" y="71" width="52" height="11"/><circle class="wh" cx="80" cy="60" r="7"/><path class="nl" d="M116 58q22 0 26 24" style="stroke-width:3"/>',
+  };
+  const TYPE = { SV1: 'solenoid', SV2: 'solenoid', SV3: 'solenoid', SV4: 'solenoid', PV1: 'solenoid', PV2: 'solenoid', TV2: 'ballservo', VV1: 'ballservo', TV1: 'needlestep', NV1: 'needle', CV1: 'check', CV2: 'check', CV3: 'check', CV4: 'check', RV1: 'relief', RV2: 'relief', REG1: 'regulator', REG2: 'regulator', PT1: 'transducer', PT2: 'transducer', PT3: 'transducer', PT4: 'transducer', PT5: 'transducer', PT6: 'transducer', TT1: 'thermo', TC1: 'thermo', TC6: 'thermo', TC7: 'thermo', F1: 'filter', V1: 'venturi', TANK: 'tank', ENG: 'engine', IG1: 'torch', LC1: 'loadcell' };
+  const QUERY = {
+    solenoid: ['2/2 way brass solenoid valve normally closed 3/8', 'válvula solenoide latão 2/2 vias normalmente fechada'],
+    ballservo: ['servo actuated brass ball valve 1/2', 'válvula esfera latão 1/2 com servo motor'],
+    needlestep: ['stepper motor actuated needle valve', 'válvula agulha acionada por motor de passo'],
+    needle: ['brass needle valve 1/4', 'válvula agulha latão 1/4'],
+    check: ['brass inline check valve 1/2 NPT', 'válvula de retenção latão 1/2'],
+    relief: ['brass pressure relief valve 30 bar', 'válvula de alívio de pressão latão 30 bar'],
+    regulator: ['oxygen cylinder pressure regulator high flow', 'regulador de pressão cilindro de oxigênio'],
+    transducer: ['pressure transducer 0-30 bar stainless 1/4 NPT', 'transdutor de pressão 0-30 bar inox'],
+    thermo: ['type K thermocouple probe compression fitting', 'termopar tipo K com conexão de compressão'],
+    filter: ['inline sintered bronze filter 1/2', 'filtro em linha bronze sinterizado 1/2'],
+    venturi: ['sonic venturi critical flow nozzle', 'bocal venturi sônico vazão crítica'],
+    tank: ['aluminium tube pressure vessel end caps', 'vaso de pressão tubo de alumínio'],
+    engine: ['pintle injector rocket engine static fire', 'motor foguete injetor pintle teste estático'],
+    torch: ['torch igniter rocket engine spark plug', 'ignitor tocha motor foguete vela'],
+    loadcell: ['S type load cell 100 kg', 'célula de carga tipo S 100 kg'],
+  };
+  const photoOK = {};
+  function openPop(id) {
+    const i = INFO(id), type = TYPE[id], pop = $('pop');
+    $('pop-kind').textContent = `${i.tag} · ${i.kind}`;
+    $('pop-title').textContent = i.title;
+    $('pop-text').textContent = i.text;
+    $('pop-extra').hidden = !popExtra; $('pop-extra').textContent = popExtra ? t(popExtra) : '';
+    const art = $('pop-art');
+    const svgArt = `<svg viewBox="0 0 160 120" aria-hidden="true">${ART[type]}</svg>`;
+    art.innerHTML = svgArt; $('pop-cap').textContent = t('Illustration, not to scale');
+    // a real photo in photos/<type>.jpg, when the site has one, replaces the drawing
+    if (photoOK[type] !== false) {
+      const img = new Image(); img.alt = i.title;
+      img.onload = () => { photoOK[type] = true; if (selected === id) { art.innerHTML = ''; art.appendChild(img); $('pop-cap').textContent = t('Photo'); } };
+      img.onerror = () => { photoOK[type] = false; };
+      img.src = `photos/${type}.jpg`;
+    }
+    const q = QUERY[type][window.I18N.lang === 'pt' ? 1 : 0];
+    $('pop-link').href = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q);
+    $('pop-link').textContent = t('See real photos ↗');
+    pop.hidden = false;
+    placePop(id);
+  }
+  function placePop(id) {
+    const pop = $('pop');
+    if (window.matchMedia('(max-width: 640px)').matches) { pop.style.left = ''; pop.style.top = ''; return; }
+    const box = pop.parentElement.getBoundingClientRect(), r = comps[id].g.getBoundingClientRect();
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const left = Math.max(8, Math.min(box.width - pw - 8, r.left - box.left + r.width / 2 - pw / 2));
+    let top = r.bottom - box.top + 10;
+    if (top + ph > box.height - 8) top = r.top - box.top - ph - 10;
+    pop.style.left = left + 'px'; pop.style.top = Math.max(8, top) + 'px';
+  }
+  function closePop() { $('pop').hidden = true; if (selected) comps[selected].g.classList.remove('sel'); selected = null; }
+  $('pop-x').onclick = closePop;
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('pop').hidden) closePop(); });
+  document.addEventListener('pointerdown', (e) => { if (!$('pop').hidden && !e.target.closest('#pop, .comp')) closePop(); });
+  document.querySelector('.pid-scroll').addEventListener('scroll', () => { if (!$('pop').hidden && selected) placePop(selected); });
+
+  function INFO(id) {
+    const I = {
+      TANK: ['Fuel tank', 'Vessel', 'Ethanol tank', '6063 tube Ø63.5 × 4 mm, 1.5 L, pressurized to 24 bar by nitrogen. Maximum operating pressure 30 bar, proof-tested with water at 45 bar. Hoop stress at 30 bar is 21 MPa against 110 MPa yield.'],
+      REG1: ['REG-1', 'Regulator', 'Nitrogen regulator', 'Air-conditioning type, set to 24 bar. Pushes the ethanol out of the tank and feeds both purge lines.'],
+      REG2: ['REG-2', 'Regulator', 'Oxygen regulator', 'Drops cylinder pressure (up to 200 bar) to about 15 bar in phase one and 24 bar in phase two. Opened by hand only: remote valves sit on the regulated side.'],
+      PT6: ['PT-6', 'Instrument', 'Nitrogen pressure', 'Confirms purge gas is available before arming.'],
+      PV1: ['PV-1', 'Solenoid valve, normally open', 'Fuel-side purge', 'Opens when power drops and flushes the fuel manifold with nitrogen after every firing or abort.'],
+      PV2: ['PV-2', 'Solenoid valve, normally open', 'Oxygen-side purge', 'Opens when power drops and flushes the oxygen manifold with nitrogen.'],
+      CV1: ['CV-1', 'Check valve', 'Fuel check valve', 'Lets ethanol flow to the engine only. Stops chamber gas pushing back into the fuel line.'],
+      CV2: ['CV-2', 'Check valve', 'Oxygen check valve', 'Stops fuel or hot gas reaching the oxygen line.'],
+      CV3: ['CV-3', 'Check valve', 'Purge check valve', 'Keeps ethanol out of the nitrogen purge line.'],
+      CV4: ['CV-4', 'Check valve', 'Purge check valve', 'Keeps oxygen out of the nitrogen purge line.'],
+      RV1: ['RV-1', 'Relief valve', 'Fuel tank relief', 'Spring-loaded, lifts at 30 bar and reseats near 28 bar. No power or software involved. Turn on the regulator fault to see it lift.'],
+      RV2: ['RV-2', 'Relief valve', 'Oxygen line relief', 'Lifts at 30 bar if the oxygen regulator fails open, protecting every part downstream.'],
+      VV1: ['VV-1', 'Servo ball valve', 'Tank vent', 'Open when safe, closed to pressurize the tank on arming, reopened after shutdown.'],
+      PT3: ['PT-3', 'Instrument', 'Tank pressure', 'Pressurization check and relief monitoring. Aborts if tank pressure falls toward chamber pressure.'],
+      TC7: ['TC-7', 'Thermocouple', 'Ethanol temperature', 'Gives the fuel density for the mass-flow calculation.'],
+      SV1: ['SV-1', 'Solenoid valve, normally closed', 'Main fuel valve', '3/8 in, brass with FKM seat. Fails closed when power drops.'],
+      TV1: ['TV-1', 'Stepper-driven needle valve', 'Fuel throttle', '3/8 in needle valve on a NEMA 17 stepper with a 5:1 gearbox and TMC2209 driver. The inner loop holds the fuel pressure drop that gives O/F 1.3.'],
+      PT4: ['PT-4', 'Instrument', 'Fuel manifold pressure', 'With PT-5 it gives the pressure drop across the injector, which the bench calibration turns into fuel flow.'],
+      F1: ['F-1', 'Filter', 'Oxygen filter', 'Sintered bronze, 1/2 in, right after the regulator. Particles hitting valve seats in oxygen are an ignition source.'],
+      SV2: ['SV-2', 'Solenoid valve, normally closed', 'Main oxygen valve', '1/2 in, oxygen-service, PTFE seat. Opens 0.2 s before fuel so the chamber never fills with unburned ethanol.'],
+      TV2: ['TV-2', 'Servo ball valve', 'Oxygen throttle', '1/2 in brass ball valve on a 150 kg·cm servo. Sets the venturi inlet pressure, and with it the oxygen flow.'],
+      PT1: ['PT-1', 'Instrument', 'Venturi inlet pressure', 'Oxygen flow is directly proportional to this pressure while the venturi is choked.'],
+      TT1: ['TT-1', 'Thermocouple', 'Venturi inlet temperature', 'Corrects the flow for gas cooled by the regulator, up to 8% at −20 °C.'],
+      V1: ['V-1', 'Sonic venturi', 'Oxygen flowmeter', 'Ø5.4 mm throat. Choked flow depends only on inlet pressure and temperature, and stops chamber pressure swings travelling upstream.'],
+      PT2: ['PT-2', 'Instrument', 'Oxygen manifold pressure', 'Confirms the venturi is still choked: manifold below 85% of the inlet.'],
+      TC6: ['TC-6', 'Thermocouple', 'Regulator body', 'Watches regulator cooling and droop as the cylinder empties.'],
+      NV1: ['NV-1', 'Hand needle valve', 'Torch oxygen trim', 'Set once on the bench to give the torch a stable flame.'],
+      SV3: ['SV-3', 'Solenoid valve, normally closed', 'Torch oxygen', 'Opens with the spark for the first second of the sequence.'],
+      SV4: ['SV-4', 'Solenoid valve, normally closed', 'Torch propane', 'From a camping-gas cartridge.'],
+      ENG: ['Engine', 'Thrust chamber', 'Pintle engine', 'Brass head, graphite liner Ø40 chamber and Ø16 throat, 6063 sleeve, steel retainer plate, four M8 tie rods. 400 N at 15 bar in phase two.'],
+      IG1: ['IG-1', 'Torch igniter', 'Torch igniter', 'Spark plug, propane and a little oxygen. The flame enters the chamber 15 mm from the injector face.'],
+      PT5: ['PT-5', 'Instrument', 'Chamber pressure', 'Through a stainless standoff coil. Confirms ignition, closes the thrust loop and drives most aborts.'],
+      TC1: ['TC-1', 'Thermocouple', 'Sleeve temperature', 'On the sleeve outside the throat. Aborts the burn at 120 °C.'],
+      LC1: ['LC-1', 'Load cell', 'Thrust', 'S-type, 100 kg. Measures thrust for the c* and Isp check.'],
+    }[id];
+    return { tag: t(I[0]), kind: t(I[1]), title: t(I[2]), text: t(I[3]) };
+  }
+
+  /* ---------- console ---------- */
+  const RO = [
+    ['pc', 'Chamber', 'bar', 1], ['F', 'Thrust', 'N', 0], ['of', 'Mixture O/F', '', 2],
+    ['mox', 'Oxygen flow', 'g/s', 0], ['mf', 'Ethanol flow', 'g/s', 0], ['pv', 'Venturi inlet', 'bar', 1],
+    ['pt', 'Fuel tank', 'bar', 1], ['ts', 'Sleeve', '°C', 0], ['tg', 'Liner (est.)', '°C', 0],
+  ];
+  const roEls = {};
+  for (const [k, , u] of RO) {
+    const d = document.createElement('div'); d.className = 'ro';
+    d.innerHTML = `<span></span><b>–<small>${u}</small></b>`;
+    $('readouts').appendChild(d); roEls[k] = d;
+  }
+  const SEQ = [['arm', 'Arm'], ['ign', 'T−1.0 igniter'], ['ox', 'T−0.2 oxygen'], ['fuel', 'T0 fuel'], ['ramp', 'T+0.5 ramp'], ['run', 'Run'], ['shut', 'Shutdown']];
+  for (const [k] of SEQ) { const s = document.createElement('span'); s.dataset.k = k; $('seq').appendChild(s); }
+  function labelConsole() {
+    for (const [k, n] of RO) roEls[k].querySelector('span').textContent = t(n);
+    $('seq').querySelectorAll('span').forEach((s, i) => { s.textContent = t(SEQ[i][1]); });
+  }
+
+  function log(msg, cls) {
+    const d = document.createElement('div'); if (cls) d.className = cls;
+    const tt = S.seqT !== null ? `T${S.seqT >= 0 ? '+' : '−'}${fmt(Math.abs(S.seqT), 2)}` : `${fmt(S.t, 1)} s`;
+    d.innerHTML = `<b>${tt}</b> ${msg}`;
+    const L = $('log'); L.prepend(d); while (L.children.length > 60) L.lastChild.remove();
+  }
+
+  function setPhase(p, quiet) {
+    S.phase = p; S.PvMax = PH[p].Pv * HEAD;
+    $('ph1').setAttribute('aria-pressed', p === 1); $('ph2').setAttribute('aria-pressed', p === 2);
+    $('f-thrust').innerHTML = `${PH[p].F}<small>N</small>`;
+    $('f-pc').innerHTML = `${PH[p].Pc}<small>bar</small>`;
+    $('f-mdot').innerHTML = `${PH[p].m}<small>g/s</small>`;
+    S.engTxt.textContent = `${PH[p].F} N, ${fmt(PH[p].Pc, 1)} bar`;
+    $('f-pc').innerHTML = `${fmt(PH[p].Pc, 1)}<small>bar</small>`;
+    if (!quiet) log(t(p === 1 ? 'Phase one: 15 bar oxygen regulator' : 'Phase two: 24 bar oxygen regulator'));
+  }
+  $('ph1').onclick = () => { if (S.mode !== 'firing') setPhase(1); };
+  $('ph2').onclick = () => { if (S.mode !== 'firing') setPhase(2); };
+
+  $('thr').oninput = (e) => { S.thr = e.target.value / 100; $('thr-v').textContent = e.target.value + '%'; };
+  $('speed').oninput = (e) => { S.speed = +e.target.value; $('speed-v').textContent = e.target.value + '×'; };
+  const fx = { 'fx-reg1': 'reg1', 'fx-ign': 'ign', 'fx-droop': 'droop', 'fx-ins': 'ins' };
+  for (const id in fx) $(id).onchange = (e) => { S.faults[fx[id]] = e.target.checked; if (fx[id] === 'droop' && !e.target.checked) S.PvMax = PH[S.phase].Pv * HEAD; log(t(e.target.checked ? 'Fault on: {0}' : 'Fault off: {0}', e.target.parentNode.textContent.trim()), e.target.checked ? 'warn' : ''); };
+  document.querySelectorAll('[data-fault]').forEach((b) => b.addEventListener('click', () => {
+    const c = $(b.dataset.fault); c.checked = true; c.dispatchEvent(new Event('change'));
+    document.getElementById('simulator').scrollIntoView({ behavior: 'smooth' });
+  }));
+
+  function setMode(m) { S.mode = m; const p = $('state'); p.dataset.s = m; p.textContent = t({ safe: 'Safe', armed: 'Armed', firing: 'Firing', abort: 'Aborted', estop: 'E-stop' }[m]); }
+
+  $('btn-arm').onclick = () => {
+    if (S.mode !== 'safe') return;
+    S.open.PV1 = false; S.open.PV2 = false; S.open.VV1 = false; S.open.SV1 = false; S.open.SV2 = false; S.open.SV3 = false; S.open.SV4 = false; S.spark = false;
+    setMode('armed'); S.seqT = null; log(t('Armed: purges closed, vent closed, tank pressurizing'));
+  };
+  $('btn-fire').onclick = () => {
+    if (S.mode !== 'armed' || S.Ptank < 22) return;
+    setMode('firing'); S.seqT = -1.0; S.fired = true; S.flameT = 0; S.iOx = 0; S.iF = 0; S.thrEff = S.thr; S.pcErrT = 0; S.unchokeT = 0;
+    S.PvMax = PH[S.phase].Pv * HEAD;
+    S.open.SV3 = true; S.open.SV4 = true; S.spark = true;
+    log(t('Fire: spark on, torch oxygen and propane open'));
+  };
+  $('btn-safe').onclick = () => {
+    if (S.mode === 'firing') { shutdown(t('Safe commanded during burn'), true); return; }
+    S.open = { SV1: false, SV2: false, SV3: false, SV4: false, PV1: true, PV2: true, VV1: true }; S.spark = false;
+    setMode('safe'); S.seqT = null; log(t('Safed: purges open, tank venting'));
+  };
+  $('btn-estop').onclick = () => {
+    S.open.SV1 = false; S.open.SV2 = false; S.open.SV3 = false; S.open.SV4 = false; S.open.PV1 = true; S.open.PV2 = true; S.spark = false;
+    S.open.VV1 = true; S.shutT = null; setMode('estop'); log(t('E-stop: solenoid power cut by relay. Mains closed, purges open'), 'bad');
+  };
+
+  function shutdown(reason, abort) {
+    if (S.shutT !== null) return;
+    S.shutT = 0; S.open.SV2 = false; S.open.SV3 = false; S.open.SV4 = false; S.spark = false;
+    log(abort ? t('ABORT: {0}', reason) : reason, abort ? 'bad' : '');
+    if (abort) setMode('abort');
+  }
+
+  /* ---------- physics ---------- */
+  function step(dt) {
+    S.t += dt;
+    const P = PH[S.phase];
+    const PcFull = P.Pc;
+    // nitrogen supply and tank
+    const sup = S.faults.reg1 ? 42 : 24;
+    let dP = (sup - S.Ptank) / 2.2;
+    if (S.open.VV1) dP -= S.Ptank / 0.15;
+    if (S.Ptank > 30) S.rv = true;
+    if (S.rv && S.Ptank < 28) { S.rv = false; log(t('RV-1 reseated')); }
+    if (S.rv) dP -= (S.Ptank - 27.5) / 0.12;
+    if (S.rv && !S.rvLogged) { log(t('RV-1 lifted at 30 bar: relief venting nitrogen'), 'warn'); S.rvLogged = true; }
+    if (!S.rv) S.rvLogged = false;
+    S.Ptank = Math.max(0, S.Ptank + dP * dt);
+
+    // sequence
+    if (S.mode === 'firing' && S.seqT !== null) {
+      S.seqT += dt;
+      const T = S.seqT;
+      if (S.shutT === null) {
+        if (S.spark && !S.faults.ign) S.flameT += dt;
+        S.flame = S.spark && !S.faults.ign && S.flameT > 0.15;
+        if (T >= -0.7 && T < -0.68 && !S.flame) shutdown(t('no torch flame (TC-5)'), true);
+        if (T >= -0.2 && !S.open.SV2 && S.shutT === null) { S.open.SV2 = true; S.posOx = 0; S.uOx = 0.6 * S.thr / HEAD; log(t('SV-2 open: oxygen lead, TV-2 at 60% preset')); }
+        if (T >= 0 && !S.open.SV1 && S.shutT === null) { S.open.SV1 = true; S.uF = ffFuel(0.6); log(t('SV-1 open: fuel')); }
+        if (T >= 0.3 && T < 0.32 && S.Pc < PcFull / 3) shutdown(t('no ignition, chamber {0} bar below {1}', fmt(S.Pc, 1), fmt(PcFull / 3, 1)), true);
+        if (T >= 0.5 && S.spark) { S.open.SV3 = false; S.open.SV4 = false; S.spark = false; log(t('Ignition confirmed at {0} bar. Igniter off, ramping', fmt(S.Pc, 1))); }
+        if (T >= 0.5) control(dt, PcFull);
+        if (T >= 1.5) checks(dt, PcFull);
+        if (T >= 10 && S.shutT === null) shutdown(t('Burn complete: 10 s'));
+      }
+    } else { S.flame = false; }
+    if (S.shutT !== null) {
+      S.shutT += dt;
+      if (S.shutT >= 0.1 && S.open.SV1) { S.open.SV1 = false; }
+      if (S.shutT >= 0.12 && !S.open.PV1) { S.open.PV1 = true; S.open.PV2 = true; S.open.VV1 = true; log(t('Mains closed, purges open, tank venting')); }
+      if (S.shutT > 0.5) { if (S.mode === 'firing') setMode('safe'); S.seqT = null; S.shutT = null; }
+    }
+
+    // droop fault
+    if (S.faults.droop && S.mode === 'firing' && S.seqT > 2) S.PvMax = Math.max(PH[S.phase].Pv * 0.55, S.PvMax - dt * PH[S.phase].Pv * 0.09);
+
+    // actuators
+    S.posOx += (S.uOx - S.posOx) * Math.min(1, dt / 0.12);
+    S.posF += (S.uF - S.posF) * Math.min(1, dt / 0.2);
+    const Pv = S.open.SV2 ? S.posOx * S.PvMax : 0;
+    S.Pv = Pv;
+    // oxygen flow
+    let mox = Pv > 0.2 ? MOX_REF * Pv / PV_REF : 0;
+    // manifold sits above the chamber by the annulus drop (1.8 bar at full phase-two flow)
+    const Pman = S.Pc + 1.8 * Math.pow(S.mox / MOX_REF, 2);
+    S.choked = !(Pv > 1 && Pman > 0.85 * Pv);
+    if (!S.choked) mox *= Math.max(0.2, (Pv - Pman) / (0.15 * Pv));
+    if (S.open.PV2 && S.mode !== 'firing') mox = 0;
+    S.mox += (mox - S.mox) * Math.min(1, dt / 0.03);
+    // fuel flow
+    let mf = 0;
+    if (S.open.SV1) mf = CF * S.posF * Math.sqrt(Math.max(0, S.Ptank - S.Pc));
+    S.mf += (mf - S.mf) * Math.min(1, dt / 0.03);
+
+    // combustion
+    if ((S.flame || S.burning) && S.mox > 0.008 && S.mf > 0.004) S.burning = true;
+    if (S.mox < 0.004 || S.mf < 0.002) S.burning = false;
+    const m = S.mox + S.mf;
+    // c* falls away from O/F 1.3, mostly on the fuel-rich side
+    const ofr = S.mf > 1e-4 ? S.mox / S.mf : 9;
+    const eta = Math.max(0.6, 1 - 0.6 * Math.pow((ofr - 1.3) / 1.3, 2));
+    const PcT = S.burning ? m * PC_K * eta : m * PC_K * 0.33;
+    S.Pc += (PcT - S.Pc) * Math.min(1, dt / 0.04);
+    const Isp = 190 + 10 * Math.min(1, S.Pc / 15);
+    S.F = S.burning ? m * 9.81 * Isp : m * 150;
+
+    // thermal
+    const k = S.faults.ins ? 0.035 : 0.0025;
+    if (S.burning) S.Tg += (1000 * Math.min(1.1, S.Pc / 15) + 100 - S.Tg) * dt / 5;
+    S.Tg += (-(S.Tg - S.Ts) * k * 0.9 - (S.Tg - 25) / 45) * dt;
+    S.Ts += ((S.Tg - S.Ts) * k - (S.Ts - 25) / 400) * dt;
+  }
+  function ffFuel(frac) {
+    const P = PH[S.phase];
+    const mfT = frac * (MOX_REF * P.Pv / PV_REF) / 1.3;
+    return Math.min(1, mfT / (CF * Math.sqrt(Math.max(1, S.Ptank - frac * P.Pc))));
+  }
+  function control(dt, PcFull) {
+    // setpoint ramps from 60% to the throttle setting between T+0.5 and T+1.5
+    const ramp = Math.min(1, 0.6 + 0.4 * Math.max(0, S.seqT - 0.5));
+    // throttle commands are slew-limited to 30%/s so the slower fuel needle keeps up
+    S.thrEff += Math.max(-0.3 * dt, Math.min(0.3 * dt, S.thr - S.thrEff));
+    const cmd = Math.min(S.thrEff, ramp);
+    const e = (cmd * PcFull - S.Pc) / PcFull;
+    // TV-2 runs open loop from the throttle map, with a slow Pc trim
+    S.iOx = Math.max(-0.15, Math.min(0.15, S.iOx + e * dt * 0.5));
+    S.uOx = Math.max(0, Math.min(1, cmd / HEAD + S.iOx));
+    // fuel needle follows the commanded oxygen flow for O/F 1.3
+    const target = MOX_REF * S.uOx * S.PvMax / PV_REF / 1.3;
+    S.uF = Math.max(0, Math.min(1, target / (CF * Math.sqrt(Math.max(1, S.Ptank - S.Pc)))));
+  }
+  function checks(dt, PcFull) {
+    const set = S.thrEff * PcFull;
+    if (Math.abs(S.Pc - set) / set > 0.2) S.pcErrT += dt; else S.pcErrT = 0;
+    if (S.pcErrT > 0.4) shutdown(t('chamber {0} bar, more than 20% off the {1} bar setpoint', fmt(S.Pc, 1), fmt(set, 1)), true);
+    if (S.Ts > 120) shutdown(t('sleeve at {0} °C (TC-1 limit 120 °C)', fmt(S.Ts, 0)), true);
+    if (!S.choked) S.unchokeT += dt; else S.unchokeT = 0;
+    if (S.unchokeT > 0.25) shutdown(t('venturi unchoked (PT-2 above 85% of PT-1)'), true);
+    if (S.Ptank < S.Pc + 2) shutdown(t('fuel tank pressure falling toward the chamber'), true);
+  }
+
+  /* ---------- render ---------- */
+  const dashOff = {};
+  function setFlow(k, rate, dt) {
+    const e = flowEls[k]; const on = rate > 0.01;
+    e.classList.toggle('on', on);
+    if (on) { dashOff[k] = ((dashOff[k] || 0) - dt * (25 + 160 * Math.min(1.3, rate))) % 1200; e.style.strokeDashoffset = dashOff[k]; }
+  }
+  function render(dt) {
+    const F = S;
+    const tankFill = (dP) => 0;
+    const pressurizing = !S.open.VV1 && S.Ptank < (S.faults.reg1 ? 41 : 23.8);
+    const fuelR = S.mf / 0.0887, oxR = S.mox / MOX_REF;
+    const purge1 = S.open.PV1 && S.mode !== 'armed' ? 0.5 : 0;
+    const purge2 = S.open.PV2 && S.mode !== 'armed' ? 0.5 : 0;
+    const vent = S.open.VV1 && S.Ptank > 0.3 ? 0.8 : 0;
+    const torch = S.open.SV3 ? 0.6 : 0, prop = S.open.SV4 ? 0.6 : 0;
+    const n2tank = (pressurizing ? 0.8 : 0) + vent + (S.rv ? 1 : 0);
+    setFlow('n2a', n2tank + purge1 + purge2, dt); setFlow('n2b', n2tank, dt);
+    setFlow('p1a', purge1, dt); setFlow('p1b', purge1, dt); setFlow('p1c', purge1, dt);
+    setFlow('p2', purge2, dt); setFlow('p2b', purge2, dt); setFlow('p2c', purge2, dt);
+    setFlow('vent', vent, dt); setFlow('ventx', vent, dt);
+    setFlow('rv', S.rv ? 1.2 : 0, dt); setFlow('rvx', S.rv ? 1.2 : 0, dt);
+    setFlow('fa', fuelR, dt); setFlow('fb', fuelR, dt); setFlow('fc', fuelR, dt); setFlow('fd', fuelR, dt); setFlow('fe', fuelR + purge1, dt);
+    setFlow('ga', oxR + torch, dt); setFlow('gb', oxR + torch, dt); setFlow('gc', oxR + torch * (1), dt);
+    setFlow('gd', oxR, dt); setFlow('ge', oxR, dt); setFlow('gf', oxR, dt); setFlow('gg', oxR + purge2, dt);
+    // fix: torch branch leaves upstream of SV-2, so gc carries only main flow beyond x 215
+    setFlow('ta', torch, dt); setFlow('tb', torch, dt); setFlow('tc', torch, dt);
+    setFlow('pa', prop, dt); setFlow('pb', prop, dt);
+
+    for (const id of TOGGLE) {
+      const c = comps[id].g; c.classList.toggle('closed', !S.open[id]);
+      const energized = id.startsWith('PV') ? !S.open[id] : S.open[id];
+      c.classList.toggle('energized', energized);
+    }
+    comps.TV1.g.classList.toggle('energized', S.open.SV1 && S.mode === 'firing');
+    comps.TV2.g.classList.toggle('energized', S.open.SV2 && S.mode === 'firing');
+    S.rvFlash.classList.toggle('on', S.rv);
+    S.sparkEl.setAttribute('opacity', S.spark ? (Math.random() > 0.5 ? 1 : 0.2) : 0);
+    const thrustN = S.F / 400;
+    S.glow.setAttribute('opacity', S.burning ? 0.25 + 0.35 * Math.min(1, thrustN) : Math.max(0, Math.min(0.25, (S.Tg - 300) / 2400)));
+    const flick = 0.85 + Math.random() * 0.15;
+    S.plume.setAttribute('opacity', S.burning ? 0.55 * flick : 0);
+    S.plumeCore.setAttribute('opacity', S.burning ? 0.85 * flick : 0);
+    const len = 20 + 45 * Math.min(1.1, thrustN);
+    S.plume.setAttribute('d', `M780 577 L${770 - 8 * thrustN} ${577 + len} L${810 + 8 * thrustN} ${577 + len} L800 577 Z`);
+    S.plumeCore.setAttribute('d', `M784 577 L781 ${577 + len * 0.7} L799 ${577 + len * 0.7} L796 577 Z`);
+    S.tankTxt.textContent = `${fmt(S.Ptank, 1)} bar`;
+    S.chokeTxt.textContent = S.open.SV2 && S.Pv > 1 ? (S.choked ? t('choked') : t('UNCHOKED')) : '';
+    S.chokeTxt.style.fill = S.choked ? '' : 'var(--hot)';
+
+    const of = S.mf > 0.003 ? S.mox / S.mf : NaN;
+    const vals = { pc: S.Pc, F: S.F, of, mox: S.mox * 1000, mf: S.mf * 1000, pv: S.Pv || 0, pt: S.Ptank, ts: S.Ts, tg: S.Tg };
+    for (const [k, , u, dp] of RO) {
+      const b = roEls[k].querySelector('b');
+      b.innerHTML = `${isFinite(vals[k]) ? fmt(vals[k], dp) : '–'}<small>${u}</small>`;
+    }
+    roEls.ts.classList.toggle('alarm', S.Ts > 100);
+    roEls.pt.classList.toggle('alarm', S.rv);
+    roEls.of.classList.toggle('alarm', isFinite(of) && S.burning && Math.abs(of - 1.3) > 0.3);
+    $('clock').textContent = S.seqT !== null ? `T${S.seqT >= 0 ? '+' : '−'}${fmt(Math.abs(S.seqT), 1)} s` : 'T −';
+    $('btn-fire').disabled = !(S.mode === 'armed' && S.Ptank >= 22);
+    $('btn-arm').disabled = S.mode !== 'safe';
+    $('btn-fire').textContent = S.mode === 'armed' && S.Ptank < 22 ? t('Pressurizing') : t('Fire');
+
+    const T = S.seqT;
+    const stage = S.mode === 'armed' ? 'arm' : S.mode === 'firing' && T !== null ? (S.shutT !== null ? 'shut' : T < -0.2 ? 'ign' : T < 0 ? 'ox' : T < 0.5 ? 'fuel' : T < 1.5 ? 'ramp' : 'run') : null;
+    const order = SEQ.map((s) => s[0]);
+    const si = order.indexOf(stage);
+    $('seq').querySelectorAll('span').forEach((s, i) => { s.classList.toggle('on', i === si); s.classList.toggle('done', si > -1 && i < si); });
+    if (S.mode === 'abort' || S.mode === 'estop') { /* stays until Safe */ }
+    window.__simThrust = S.burning ? S.F : 0;
+  }
+
+  /* ---------- chart ---------- */
+  const cv = $('chart'); const ctx = cv.getContext('2d');
+  function drawChart() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const padL = 26, padB = 16, top = 6, H = h - padB - top, W = w - padL - 4;
+    const ymax = 25;
+    ctx.font = '10px ' + css('--mono'); ctx.fillStyle = css('--muted'); ctx.strokeStyle = css('--rule'); ctx.lineWidth = 1;
+    for (const v of [0, 5, 10, 15, 20, 25]) {
+      const y = top + H - (v / ymax) * H;
+      ctx.beginPath(); ctx.moveTo(padL, y + .5); ctx.lineTo(w - 4, y + .5); ctx.stroke();
+      ctx.fillText(String(v), 2, y + 3);
+    }
+    for (const s of [0, 10, 20, 30]) { const x = padL + (s / 30) * W; ctx.fillText(`−${30 - s}s`, Math.min(x - 8, w - 28), h - 3); }
+    const series = [['pc', css('--hot'), 1], ['F', css('--gox'), 1 / 20], ['ts', css('--warn'), 1 / 10]];
+    const now = S.t, hist = S.hist;
+    for (const [k, col, sc] of series) {
+      ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath(); let first = true;
+      for (const p of hist) {
+        const x = padL + ((p.t - (now - 30)) / 30) * W; if (x < padL) continue;
+        const y = top + H - Math.min(1, (p[k] * sc) / ymax) * H;
+        if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /* ---------- loop ---------- */
+  let last = performance.now(), histT = 0;
+  function frame(now) {
+    let real = Math.min(0.1, (now - last) / 1000); last = now;
+    let simdt = real * S.speed; const h = 0.002;
+    while (simdt > 0) { const d = Math.min(h, simdt); step(d); simdt -= d; }
+    histT += real * S.speed;
+    if (histT > 0.05) { histT = 0; S.hist.push({ t: S.t, pc: S.Pc, F: S.F, ts: S.Ts }); while (S.hist.length && S.hist[0].t < S.t - 31) S.hist.shift(); }
+    render(real);
+    drawChart();
+    requestAnimationFrame(frame);
+  }
+  setPhase(1, true);
+  labelComps(); labelConsole();
+  $('log').innerHTML = '';
+  log(t('Stand safe. Press Arm, wait for 24 bar in the tank, then Fire.'));
+  requestAnimationFrame(frame);
+  window.__sim = S;
+
+  /* ---------- budget ---------- */
+  const B = [['Gases and regulators', 3380], ['Valves and actuators', 2970], ['Stand and safety', 2350], ['Instruments and control', 2000], ['Engine and fuel tank', 1530], ['Lines and fittings', 855]];
+  const bmax = 3380;
+  function renderBudget() {
+    $('budget').innerHTML = '';
+    for (const [n, v] of B) {
+      const d = document.createElement('div'); d.className = 'bline';
+      d.innerHTML = `<span>${t(n)}</span><span class="track"><i style="width:${(v / bmax) * 100}%"></i></span><span class="v">R$${window.I18N.num(v, 0, true)}</span>`;
+      $('budget').appendChild(d);
+    }
+  }
+  renderBudget();
+
+  document.addEventListener('langchange', () => {
+    labelComps(); labelConsole(); renderBudget(); setMode(S.mode); setPhase(S.phase, true);
+    if (!$('pop').hidden && selected) openPop(selected);
+  });
+})();
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const t = (...a) => window.I18N.t(...a);
+const canvas = document.getElementById('three');
+const box = canvas.parentElement;
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); }
+catch (e) { document.getElementById('fallback3d').hidden = false; canvas.hidden = true; }
+
+if (renderer) {
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.localClippingEnabled = true;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(35, 1, 1, 8000);
+  const HOME_DIR = new THREE.Vector3(430, 210, 505).normalize();
+  camera.position.copy(HOME_DIR).multiplyScalar(700);
+  const controls = new OrbitControls(camera, canvas);
+  controls.target.set(0, -10, 0); controls.enableDamping = true; controls.minDistance = 30; controls.maxDistance = 4000;
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x445048, 1.6));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(300, 500, 400); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xbfd2ff, 1.0); rim.position.set(-400, -100, -300); scene.add(rim);
+
+  const clip = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+  const mats = [];
+  const M = (color, o = {}) => { const m = new THREE.MeshStandardMaterial({ color, metalness: o.metal ?? 0.5, roughness: o.rough ?? 0.45, side: THREE.DoubleSide, transparent: !!o.op, opacity: o.op ?? 1 }); mats.push(m); return m; };
+
+  // axial coordinate x (mm from head back face) -> world y = 150 - x
+  const Y = (x) => 150 - x;
+  const lathe = (pts, mat, seg = 72, phi0 = 0, phiL = Math.PI * 2) => {
+    const g = new THREE.LatheGeometry(pts.map(([r, x]) => new THREE.Vector2(r, Y(x))), seg, phi0, phiL);
+    return new THREE.Mesh(g, mat);
+  };
+  const ring = (r0, r1, x0, x1) => [[r0, x0], [r1, x0], [r1, x1], [r0, x1], [r0, x0]];
+
+  // Each move is [start, end, dx, dy, dz] in mm, played as the explode slider goes from 0 to 1.
+  // The order is the assembly sequence run backwards, so every part leaves the way it goes in.
+  const parts = [];
+  const add = (key, n, name, desc, meshes, moves) => {
+    const g = new THREE.Group(); meshes.forEach((m) => { m.userData.key = key; g.add(m); });
+    g.userData = { key, moves: moves || [] };
+    scene.add(g); parts.push({ key, n, name, desc, group: g, meshes });
+  };
+
+  const brass = M(0xc7963d, { metal: 0.8, rough: 0.5 });
+  const graphite = M(0x3b3f42, { metal: 0.1, rough: 0.85 });
+  const paper = M(0xe8e2d2, { metal: 0, rough: 0.95 });
+  const alu = M(0xb9c2c6, { metal: 0.75, rough: 0.35, op: 0.92 });
+  const steel = M(0x6f7579, { metal: 0.8, rough: 0.4 });
+  const ss = M(0xa8adb0, { metal: 0.9, rough: 0.3 });
+  const gox = M(0x2a62d6, { metal: 0.3, rough: 0.5 });
+  const fuelM = M(0xd06d17, { metal: 0.3, rough: 0.5 });
+  const torchM = M(0x8a6bc4, { metal: 0.4, rough: 0.5 });
+  const gasket = M(0x8d9a8f, { metal: 0.2, rough: 0.8 });
+
+  // assembly steps, numbered in build order; windows are on the explode slider
+  const STEPS = [
+    [0.80, 1.00, 'Wrap the ceramic paper around the graphite liner'],
+    [0.55, 0.80, 'Slide the wrapped liner up into the sleeve, with a graphite gasket at each end'],
+    [0.42, 0.55, 'Screw the pintle tip into the injector head'],
+    [0.28, 0.45, 'Seat the head spigot in the top of the sleeve, and the retainer plate under the liner'],
+    [0.10, 0.30, 'Drop the four tie rods through head and plate; disc springs and nuts on top, lock nuts below'],
+    [0.00, 0.12, 'Screw in the torch igniter and the chamber-pressure port, then connect the ethanol inlet'],
+  ];
+
+  // 1 head
+  {
+    const body = lathe(ring(0.01, 55, 0, 50), brass);
+    const spig = lathe(ring(0.01, 33.1, 50, 62), brass);
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 26, 32), brass); port.rotation.z = Math.PI / 2; port.position.set(-66, Y(27), 0);
+    const goxStub = new THREE.Mesh(new THREE.CylinderGeometry(6.35, 6.35, 50, 24), gox); goxStub.rotation.z = Math.PI / 2; goxStub.position.set(-100, Y(27), 0);
+    add('head', 1, 'Injector head', 'Brass C360, Ø110 × 50 mm with a Ø66 spigot. A ring groove feeds the 1.42 mm oxygen annulus; an FKM o-ring seals the cool spigot.', [body, spig, port, goxStub], [[0.28, 0.45, 0, 200, 0]]);
+  }
+  // 2 pintle: leaves with the head, then unscrews downward out of it
+  {
+    const tip = lathe([[0.01, 50], [5, 50], [5, 74], [4, 76], [0.01, 76]], brass);
+    const holes = [];
+    for (let i = 0; i < 6; i++) { const h = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 3, 10), fuelM); const a = i / 6 * Math.PI * 2; h.position.set(Math.cos(a) * 4.6, Y(70), Math.sin(a) * 4.6); h.rotation.z = Math.PI / 2; h.rotation.y = -a; holes.push(h); }
+    add('pintle', 2, 'Pintle tip', 'Screw-in brass tip, Ø10 with 6 × Ø1.0 mm radial fuel holes. Swap tips to test: 12 × Ø0.7, slotted, and 6 × Ø0.8 for phase one.', [tip, ...holes], [[0.28, 0.45, 0, 200, 0], [0.42, 0.55, 0, -75, 0]]);
+  }
+  // 3 fuel inlet
+  {
+    const tb = new THREE.Mesh(new THREE.CylinderGeometry(4.76, 4.76, 60, 24), fuelM); tb.position.set(0, Y(-30), 0);
+    add('fuel', 3, 'Ethanol inlet', '3/8 in copper line on the engine axis, feeding the bore through the pintle.', [tb], [[0.0, 0.12, 0, 120, 0], [0.28, 0.45, 0, 200, 0]]);
+  }
+  // 4 liner: slides down out of the sleeve
+  {
+    const l = lathe([[20, 62], [30, 62], [30, 292], [13.6, 292], [13.6, 286], [8, 265], [20, 244], [20, 62]], graphite, 96);
+    add('liner', 4, 'Graphite liner', 'One piece: Ø40 chamber, Ø16.0 throat, Ø27.2 exit, Ø60 outside, about 230 mm long. Slides out after each firing so the throat can be measured.', [l], [[0.55, 0.8, 0, -250, 0]]);
+  }
+  // 5 paper: two halves that unwrap sideways once the liner is out
+  {
+    const a = lathe(ring(30, 33, 62, 292), paper, 36, 0, Math.PI);
+    const b = lathe(ring(30, 33, 62, 292), paper, 36, Math.PI, Math.PI);
+    a.userData.moves = [[0.8, 1.0, 55, 0, 0]]; b.userData.moves = [[0.8, 1.0, -55, 0, 0]];
+    add('paper', 5, 'Ceramic paper', '3 mm ceramic-fibre paper between liner and sleeve. Slows heat into the aluminium, centres the liner and takes up thermal growth.', [a, b], [[0.55, 0.8, 0, -250, 0]]);
+  }
+  // 6 sleeve: the fixed reference
+  {
+    const sl = lathe(ring(33.1, 38.1, 50, 292), alu);
+    add('sleeve', 6, '6063 sleeve', 'Ø76.2 × 5 mm aluminium tube, no welds. The only pressure boundary around the chamber: 10 MPa hoop stress at 15 bar.', [sl], []);
+  }
+  // 7 gaskets: top one lifts off the sleeve, bottom one rides down with the liner
+  {
+    const g1 = lathe(ring(20, 30, 62, 63.5), gasket), g2 = lathe(ring(14, 30, 290.5, 292), gasket);
+    g1.userData.moves = [[0.45, 0.55, 0, 60, 0]];
+    g2.userData.moves = [[0.55, 0.8, 0, -250, 0], [0.8, 0.9, 0, -25, 0]];
+    add('gaskets', 7, 'Graphite gaskets', 'Flexible graphite sheet at each end of the liner. Seals the ends and absorbs the liner\'s axial growth.', [g1, g2], []);
+  }
+  // 8 retainer
+  {
+    const r = lathe(ring(16, 55, 292, 304), steel);
+    add('retainer', 8, 'Retainer plate', 'Steel, 12 mm, Ø110. Holds the liner against the head through the gasket; the nozzle exit shows through its centre.', [r], [[0.28, 0.45, 0, -300, 0]]);
+  }
+  // 9 rods + nuts + springs: pulled up out through the head
+  {
+    const ms = [];
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + i * Math.PI / 2, x = Math.cos(a) * 45, z = Math.sin(a) * 45;
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 330, 16), ss); rod.position.set(x, Y(150), z); ms.push(rod);
+      for (const [xa, h] of [[-8, 8], [308, 8]]) { const n = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.5, h, 6), ss); n.position.set(x, Y(xa), z); ms.push(n); }
+      for (const xa of [-2.5, -1]) { const d = new THREE.Mesh(new THREE.CylinderGeometry(8.2, 8.2, 1.2, 24), steel); d.position.set(x, Y(xa), z); ms.push(d); }
+    }
+    add('rods', 9, 'Tie rods', '4 × M8 A2-70 on a Ø90 circle. Disc springs and nut at the head, all-metal lock nut at the plate; paint stripes show any movement.', ms, [[0.1, 0.3, 0, 380, 0]]);
+  }
+  // 10 torch: unscrews radially
+  {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(34, 28, 28), torchM); body.position.set(-66, Y(77), 0);
+    const port = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 32, 16), torchM); port.rotation.z = Math.PI / 2; port.position.set(-40, Y(77), 0);
+    const plug = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 22, 6), ss); plug.rotation.z = Math.PI / 2; plug.position.set(-94, Y(77), 0);
+    add('torch', 10, 'Torch igniter', 'Brass body with a motorcycle spark plug. Propane and oxygen light at the spark; the flame enters through a Ø6 port 15 mm from the injector face.', [body, port, plug], [[0.0, 0.12, -90, 0, 0]]);
+  }
+  // 11 Pc port: unscrews radially
+  {
+    const tb = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 40, 12), ss); tb.rotation.z = Math.PI / 2; tb.position.set(52, Y(90), 0);
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(10, 1.6, 8, 40, Math.PI * 3), ss); coil.position.set(82, Y(90), 0); coil.rotation.y = Math.PI / 2;
+    add('pc', 11, 'Chamber-pressure port', '1/8 in stainless standoff coil to PT-5, so the transducer never sees hot gas.', [tb, coil], [[0.0, 0.12, 90, 0, 0]]);
+  }
+
+  const sstep = (e, a, b) => { const x = Math.min(1, Math.max(0, (e - a) / (b - a))); return x * x * (3 - 2 * x); };
+  const placeObj = (o, moves, e) => {
+    const p0 = o.userData.p0 || (o.userData.p0 = o.position.clone());
+    o.position.copy(p0);
+    for (const [a, b, dx, dy, dz] of moves) { const k = sstep(e, a, b); o.position.x += dx * k; o.position.y += dy * k; o.position.z += dz * k; }
+  };
+  function layout(e) {
+    for (const p of parts) {
+      placeObj(p.group, p.group.userData.moves, e);
+      for (const m of p.meshes) if (m.userData.moves) placeObj(m, m.userData.moves, e);
+    }
+  }
+
+  // plume
+  const plumeMat = new THREE.MeshBasicMaterial({ color: 0xff7a3d, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const plume = new THREE.Mesh(new THREE.ConeGeometry(30, 300, 40, 1, true), plumeMat); plume.rotation.x = Math.PI; scene.add(plume);
+  const core = new THREE.Mesh(new THREE.ConeGeometry(12, 160, 32, 1, true), coreMat); core.rotation.x = Math.PI; scene.add(core);
+  const glowLight = new THREE.PointLight(0xff8a3d, 0, 600); scene.add(glowLight);
+
+  // part list and captions
+  const list = document.getElementById('partlist');
+  const partcap = document.getElementById('partcap'), stepcap = document.getElementById('stepcap');
+  let selKey = null;
+  function renderList() {
+    list.innerHTML = '';
+    for (const p of parts) {
+      const li = document.createElement('li');
+      li.innerHTML = `<button type="button" aria-pressed="${p.key === selKey}" data-k="${p.key}"><span class="n">${String(p.n).padStart(2, '0')}</span><span><strong>${t(p.name)}</strong><span class="d">${t(p.desc)}</span></span></button>`;
+      list.appendChild(li);
+    }
+  }
+  function renderPartCap() {
+    const p = parts.find((q) => q.key === selKey);
+    partcap.hidden = !p;
+    if (p) partcap.innerHTML = `<strong>${String(p.n).padStart(2, '0')} · ${t(p.name)}</strong><span>${t(p.desc)}</span>`;
+  }
+  renderList();
+  list.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) select(b.dataset.k === selKey ? null : b.dataset.k); });
+  function select(k) {
+    selKey = k;
+    list.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.k === k));
+    for (const p of parts) for (const m of p.meshes) {
+      const base = m.userData.baseMat || (m.userData.baseMat = m.material);
+      if (!k || p.key === k) { m.material = base; }
+      else { if (!m.userData.ghost) { m.userData.ghost = base.clone(); m.userData.ghost.transparent = true; m.userData.ghost.opacity = 0.09; m.userData.ghost.depthWrite = false; mats.push(m.userData.ghost); } m.material = m.userData.ghost; }
+    }
+    applyClip(); renderPartCap();
+    follow = true;
+  }
+
+  // camera: frames the whole engine, or flies to the picked part, until the viewer drags or zooms
+  let follow = true, homeDir = false;
+  controls.addEventListener('start', () => { follow = false; homeDir = false; });
+  const bb = new THREE.Box3(), size = new THREE.Vector3(), center = new THREE.Vector3();
+  function goal() {
+    bb.makeEmpty();
+    for (const p of parts) if (!selKey || p.key === selKey) bb.expandByObject(p.group);
+    bb.getSize(size); bb.getCenter(center);
+    const v = THREE.MathUtils.degToRad(camera.fov) / 2, hz = Math.atan(Math.tan(v) * camera.aspect);
+    const w = Math.max(size.x, size.z);
+    const d = Math.max((size.y / 2) / Math.tan(v), (w / 2) / Math.tan(hz)) + w / 2;
+    return { center, dist: selKey ? Math.max(170, 1.6 * d) : 1.1 * d };
+  }
+
+  // picking
+  const ray = new THREE.Raycaster(); const ptr = new THREE.Vector2(); let downAt = null;
+  canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+    const r = canvas.getBoundingClientRect(); ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ptr, camera);
+    const hits = ray.intersectObjects(parts.flatMap((p) => p.meshes), false).filter((h) => (!cutOn || h.point.z <= 0.5) && (!selKey || h.object.userData.key === selKey || h.object.material.opacity > 0.5));
+    const k = hits.length ? hits[0].object.userData.key : null;
+    select(k === selKey ? null : k);
+    if (k) list.querySelector(`[data-k="${k}"]`).scrollIntoView({ block: 'nearest' });
+  });
+
+  // explode / play / reset / cut / plume
+  let explode = 0, cutOn = false, plumeOn = false, playing = null;
+  const ex = document.getElementById('explode');
+  function setExplode(v) { explode = v; ex.value = Math.round(v * 100); document.getElementById('explode-v').textContent = Math.round(v * 100) + '%'; renderStep(); }
+  ex.addEventListener('input', () => { playing = null; setExplode(ex.value / 100); follow = true; });
+  function renderStep() {
+    let cur = null;
+    STEPS.forEach((s, i) => { if (explode > s[0] && (cur === null || s[0] > STEPS[cur][0])) cur = i; });
+    if (explode <= 0.001) { stepcap.hidden = true; return; }
+    if (explode >= 0.999) { stepcap.hidden = false; stepcap.innerHTML = t('Fully exploded. Press <b>Play assembly</b> to build it in order.'); return; }
+    stepcap.hidden = cur === null;
+    if (cur !== null) stepcap.innerHTML = `<b>${t('Step {0} of {1}', cur + 1, STEPS.length)}</b> · ${t(STEPS[cur][2])}`;
+  }
+  document.getElementById('play').addEventListener('click', () => {
+    select(null); follow = true;
+    if (explode < 0.999) setExplode(1);
+    playing = { from: 1, t0: performance.now() + 900 };
+  });
+  document.getElementById('reset3d').addEventListener('click', () => { playing = null; select(null); setExplode(0); follow = true; homeDir = true; });
+  document.getElementById('cut').addEventListener('change', (e) => { cutOn = e.target.checked; applyClip(); });
+  document.getElementById('plume').addEventListener('change', (e) => { plumeOn = e.target.checked; });
+  function applyClip() { for (const m of mats) { m.clippingPlanes = cutOn ? [clip] : []; m.needsUpdate = true; } }
+  document.addEventListener('langchange', () => { renderList(); renderPartCap(); renderStep(); });
+
+  function resize() {
+    const w = box.clientWidth, h = box.clientHeight;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(box); resize();
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let last = performance.now();
+  const dir = new THREE.Vector3(), selC = new THREE.Vector3(), pb = new THREE.Box3();
+  const SHELLS = ['head', 'sleeve', 'paper', 'liner', 'gaskets', 'retainer'];
+  function tick(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (playing && now > playing.t0) {
+      const v = Math.max(0, 1 - (now - playing.t0) / 9000);
+      setExplode(v); if (v === 0) playing = null;
+    }
+    layout(explode);
+    if (follow) {
+      const g = goal(), a = reduce ? 1 : 1 - Math.exp(-dt * 4);
+      controls.target.lerp(g.center, a);
+      dir.copy(camera.position).sub(controls.target).normalize();
+      if (homeDir) { dir.lerp(HOME_DIR, a).normalize(); if (dir.distanceTo(HOME_DIR) < 0.002) homeDir = false; }
+      const cur = camera.position.distanceTo(controls.target);
+      camera.position.copy(controls.target).addScaledVector(dir, cur + (g.dist - cur) * a);
+    }
+    const simF = window.__simThrust || 0;
+    const F = plumeOn ? 400 : simF;
+    const k = Math.min(1.1, F / 400);
+    const flick = reduce ? 1 : 0.88 + Math.random() * 0.12;
+    const exitY = Y(292) + parts.find((p) => p.key === 'liner').group.position.y;
+    plume.scale.set(0.6 + 0.6 * k, 0.3 + 0.9 * k * flick, 0.6 + 0.6 * k); plume.position.set(0, exitY - 150 * plume.scale.y, 0);
+    core.scale.set(0.7 + 0.5 * k, 0.4 + 0.8 * k * flick, 0.7 + 0.5 * k); core.position.set(0, exitY - 80 * core.scale.y, 0);
+    const show = F > 1 && explode < 0.02;
+    plumeMat.opacity = show ? 0.35 * flick : 0; coreMat.opacity = show ? 0.75 * flick : 0;
+    glowLight.intensity = show ? 4e4 * k * flick : 0; glowLight.position.set(0, exitY - 60, 0);
+    // a picked part inside the engine would sit behind ghosted shells: hide the shells around it or around the camera
+    if (selKey) {
+      const sel = parts.find((p) => p.key === selKey);
+      bb.makeEmpty().expandByObject(sel.group); bb.getCenter(selC);
+      for (const p of parts) {
+        if (p === sel) { p.group.visible = true; continue; }
+        if (!SHELLS.includes(p.key)) { p.group.visible = true; continue; }
+        pb.makeEmpty().expandByObject(p.group);
+        p.group.visible = !(pb.containsPoint(selC) || pb.containsPoint(camera.position));
+      }
+    } else for (const p of parts) p.group.visible = true;
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  window.__eng = { parts, setExplode, select, camera, controls };
+  requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>
